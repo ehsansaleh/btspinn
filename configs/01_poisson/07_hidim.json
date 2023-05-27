@@ -1,0 +1,74 @@
+{
+    "desc": "Example hi-d delta poisson solution with bootstrapping",
+    "date": "January 22, 2022",
+
+    "rng_seed/range": [0, 100000, 1000],    
+    "problem": "poisson",
+    "dim": 10,
+    
+    "opt/dstr": "adam",
+    "opt/lr": 0.001,
+    "opt/epoch": 200000,
+    
+    "vol/n" : 400,
+    "srfpts/n/mdl": 1,
+    "srfpts/n/trg": 1,
+    "srfpts/dblsmpl": false,
+    "trg/btstrp": true,
+    "trg/tau/list": [0.999, 0.998, 0.996, 0.992, 0.984],
+    "trg/reg/w/list": [5.0, 4.0, 3.0, 2.0, 6.0, 7.0, 8.0],
+    "trg/w/list": [0.99, 0.98, 0.96, 0.994, 0.998, 0.999, 0.9999],
+
+    "srfpts/detspc": false,
+    
+    "nn/dstr": "mlp",
+    "nn/width": 64,
+    "nn/hidden": 4, 
+    "nn/act": "tanh", 
+
+    "chrg/dstr": "dmm",
+    "chrg/n": 1,
+    "chrg/w": [1.0],
+    "chrg/mu": [[0.0]],
+    
+    "vol/dstr": "ball",
+    "vol/c/dstr": "ball",
+    "vol/c/c":  [0.0],
+    "vol/c/r":   1.0,
+    "vol/r/dstr": "unifdpow",
+    "vol/r/low":  0.0,
+    "vol/r/high": 1.0,
+    
+    "eval/ur/dstr": "uniform",
+    "eval/ur/low":  [-1.0],
+    "eval/ur/high": [ 1.0],
+    "eval/ur/n": 1000,
+    "eval/ur/frq": 100,
+  
+    "eval/ub1/dstr": "ball",
+    "eval/ub1/c": [0.0],
+    "eval/ub1/r": 1.0,
+    "eval/ub1/n": 1000,
+    "eval/ub1/frq": 100,
+    
+    "eval/ub2/dstr": "ball",
+    "eval/ub2/c": [0.0],
+    "eval/ub2/r": "sqrt(dim)",
+    "eval/ub2/n": 1000,
+    "eval/ub2/frq": 100,
+    
+    "eval/tv/dstr": "trnvol",
+    "eval/tv/n": 1000,
+    "eval/tv/frq": 100,
+    
+    "io/avg/frq":    100,
+    "io/ckpt/frq":  2500,
+    "io/mon/frq":   1000,
+    "io/tch/dtype": "float32",
+    "io/cmprssn_lvl": 0,
+    "io/eval/bs": 256,
+    "io/flush/frq": 0,
+    
+    "looping/lines": ["ovat(aslist('rng_seed'),                                            ",
+                      "     'rest')                                                        "]
+  }

@@ -1,0 +1,21 @@
+# large size logdirs
+./01_poisson/
+04_smolluchowski/
+05_smolluchowski/
+07_smolluchowski/
+08_poisson/
+09_poisson/
+10_smolluchowski/
+11_plotting/*.h5
+13_hdpviz/*.h5
+14_unq
+15_search
+16_poisson
+17_search
+20_hdpviz
+temp/
+
+99_scratch.ipynb
+[0-9][0-9]_*.py
+**/*.html
+notes.md

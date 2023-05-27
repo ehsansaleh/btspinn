@@ -1,0 +1,70 @@
+figures:
+  8-Dimensional:
+  - name: Cheap Bootstrapping
+    columns: '*'
+    include: [{dim: 8, trg/btstrp: true}]
+  - name: Standard
+    columns: '*'
+    include: [{dim: 8, trg/btstrp: false}]
+  16-Dimensional:
+  - name: Cheap Bootstrapping
+    columns: '*'
+    include: [{dim: 16, trg/btstrp: true}]
+  - name: Standard
+    columns: '*'
+    include: [{dim: 16, trg/btstrp: false}]
+
+aggregate:
+  type: bootstrap
+  n_boot: 20
+  q: [5, 95]
+  stat: mean
+
+drop:
+  columns: []
+
+rename:
+  columns:
+    epoch: Epoch
+    npvm: Integration Variance
+  colrplc:
+    perf: Performance
+    loss: Loss
+    mse: MSE
+    mae: MAE
+    ur: Uniform Radius
+    ub1: Uniform Ball (R=1)
+    ub2: Uniform Ball (R=Sqrt(Dim))
+    tv: Train Volumes
+    pln: Plain
+    bc: Unbiased
+    slc: Flattened
+    scn: Normalized
+    mdl: Main
+    'trg/': 'Target/'
+    total: Total
+    main: Main
+    trgreg: Target Regularization
+
+plot: 
+  xcol: Epoch
+  ycol: perf/tv/mdl/scn/mse
+  huecol: fpidxgrp
+  rngcol: rng_seed
+  frame_width: 480
+  frame_height: 320
+  ncols: 4
+  sharex: true
+  sharey: 'tab'
+  header: The High-Dimensional Poisson Problem
+  fig_title: 'Training Method: {ablname}'
+  colors: snsdark
+  x_axis_type: linear
+  x_tick_fmt: eng
+  x_tick_lbls: [0, 50000, 100000, 150000, 200000]
+  y_axis_type: log
+  y_tick_fmt: null
+  y_tick_lbls: null
+  menu_width: 150
+  colsep: '/'
+  color_reset: tab

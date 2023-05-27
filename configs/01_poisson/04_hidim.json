@@ -1,0 +1,109 @@
+{
+    "desc": "Example hi-d delta poisson solution with bootstrapping",
+    "date": "January 22, 2022",
+
+    "rng_seed/range": [0, 100000, 1000],    
+    "problem": "poisson",
+    "dim/list": [2, 4, 8, 16, 32, 64],
+    
+    "opt/dstr": "adam",
+    "opt/lr": 0.001,
+    "opt/epoch": 200000,
+    
+    "g01/vol/n" : 400,
+    "g01/srfpts/n/mdl": 1,
+    "g01/srfpts/n/trg": 1,
+    "g01/srfpts/dblsmpl": false,
+    "g01/trg/btstrp": true,
+    "g01/trg/tau": 0.999, 
+    "g01/trg/reg/w": 1.0, 
+    "g01/trg/w": 0.99,
+
+    "g02/srfpts/n/mdl": 1,
+    "g02/vol/n/list" : [400, 1],
+    "g02/srfpts/n/trg/list": [1, 1000],
+    "g02/srfpts/dblsmpl": false,
+    "g02/trg/btstrp": false,
+
+    "g03/srfpts/n/mdl": 0,
+    "g03/vol/n/list" : [400, 1],
+    "g03/srfpts/n/trg/list": [2, 1000],
+    "g03/srfpts/dblsmpl": true,
+    "g03/trg/btstrp": false,
+
+    "srfpts/detspc": false,
+    
+    "nn/dstr": "mlp",
+    "nn/width": 64,
+    "nn/hidden": 2, 
+    "nn/act": "silu", 
+
+    "chrg/dstr": "dmm",
+    "chrg/n": 3,
+    "chrg/w": [1.0],
+
+    "chrg/mu/dstr": "ball",
+    "chrg/mu/c":  [[0.0]],
+    "chrg/mu/r":   [1.0],
+    
+    "vol/dstr": "ball",
+    "vol/c/dstr": "ball",
+    "vol/c/c":  [0.0],
+    "vol/c/r":   1.0,
+    "vol/r/dstr": "unifdpow",
+    "vol/r/low":  0.0,
+    "vol/r/high": 1.0,
+    
+    "ic/dstr": "sphere",
+    "ic/n": 1024,
+    "ic/frq": 0,
+    "ic/bs": 32,
+    "ic/c": [0.0],
+    "ic/r": 1000.0,
+    
+    "ic/w": 1.0,
+    "ic/bpp": "bias",
+    
+    "eval/ur/dstr": "uniform",
+    "eval/ur/low":  [-1.0],
+    "eval/ur/high": [ 1.0],
+    "eval/ur/n": 8,
+    "eval/ur/frq": 1,
+  
+    "eval/ub1/dstr": "ball",
+    "eval/ub1/c": [0.0],
+    "eval/ub1/r": 1.0,
+    "eval/ub1/n": 8,
+    "eval/ub1/frq": 1,
+    
+    "eval/ub2/dstr": "ball",
+    "eval/ub2/c": [0.0],
+    "eval/ub2/r": "sqrt(dim)",
+    "eval/ub2/n": 8,
+    "eval/ub2/frq": 1,
+    
+    "eval/tv/dstr": "trnvol",
+    "eval/tv/n": 8,
+    "eval/tv/frq": 1,
+    
+    "io/avg/frq":    100,
+    "io/ckpt/frq":  2500,
+    "io/mon/frq":   1000,
+    "io/tch/dtype": "float32",
+    "io/cmprssn_lvl": 0,
+    "io/eval/bs": 256,
+    "io/flush/frq": 0,
+    
+    "looping/lines": ["cart(aslist('rng_seed'),                                            ",
+                      "     'dim',                                                         ",
+                      "     cat(cart('g01/*').lstrip('g01/'),                              ",
+                      "         cart(zip('g02/vol/n', 'g02/srfpts/n/trg'),                 ",
+                      "              'g02/srfpts/n/mdl',                                   ",
+                      "              'g02/srfpts/dblsmpl',                                 ",
+                      "              'g02/trg/btstrp').lstrip('g02/'),                     ",
+                      "         cart(zip('g03/vol/n', 'g03/srfpts/n/trg'),                 ",
+                      "              'g03/srfpts/n/mdl',                                   ",
+                      "              'g03/srfpts/dblsmpl',                                 ",
+                      "              'g03/trg/btstrp').lstrip('g03/')),                    ",
+                      "     'rest')                                                        "]
+  }
