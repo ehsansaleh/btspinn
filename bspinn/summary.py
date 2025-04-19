@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import os
 import time
+import yaml
+import glob
 import fnmatch
 from os.path import exists, getmtime
 from itertools import chain
@@ -10,7 +12,7 @@ from collections import defaultdict
 from collections import OrderedDict as odict
 
 from bspinn.io_cfg import keyspecs, nullstr
-from bspinn.io_cfg import results_dir, summary_dir
+from bspinn.io_cfg import results_dir, summary_dir, source_dir
 from bspinn.io_utils import read_pklhdf, get_ioidx
 from bspinn.io_utils import get_h5dtypes, pd_concat
 from bspinn.io_utils import save_h5data, get_h5du
@@ -490,7 +492,8 @@ def summarize(cfgtree, epstep=2000, keys=None):
             # and let the next case take care of the summarization (which will
             # make things slower, but it will at least work safely).
             df = grp_dict["vals"]
-            assert df.eq(df.iloc[0, :], axis=1).values.all()
+            row1 = df.iloc[0, :]
+            assert (df.eq(row1, axis=1) | (df.isna() & row1.isna())).values.all()
             sudf = df.iloc[: n_epbins * n_seeds_unq, :]
             grp_dict["smry"] = sudf
         elif grp_type in ("pd.qnt", "pd.cat"):
@@ -673,25 +676,31 @@ if __name__ == "__main__":
         import argparse
         my_parser = argparse.ArgumentParser()
         my_parser.add_argument('--lazy', action='store_true')
+        my_parser.add_argument('-e', '--exps',   action='store', type=str, default='*', required=False)
         args = my_parser.parse_args()
         be_lazy = args.lazy
+        exp_pats = args.exps.split(',')
     else:
         be_lazy = True
+        exp_pats = ['*']
 
-    exps = [("01_poisson/01_btstrp2d",  "01_poisson2d", "bts"),
-            ("01_poisson/02_mse2d",     "01_poisson2d", "mse"),
-            ("01_poisson/03_ds2d",      "01_poisson2d",  "ds"),
-            ("02_smoll/01_btstrp",      "02_smol",      "bts"),
-            ("02_smoll/02_mse",         "02_smol",      "mse"),
-            ("01_poisson/04_hidim",     "03_poisshidim",  ""),
-            ("01_poisson/05_hidim",     "04_poisshidim",  ""),
-            ("01_poisson/06_hidim",     "05_poisshidim",  ""),
-            ("03_maxwell/01_rect",      "06_maxwell",     "")]
+    # Compiling the `z*_expspec.yml` into a single data-frame
+    expdflst = []
+    for expspecpath in glob.glob(f'{source_dir}/z*_expspec.yml'):
+        with open(expspecpath, 'r') as fp:
+            expspec = yaml.safe_load(fp)
+        for expname, rowslist in expspec.items():
+            expdflst += [{'experiment': expname, **rowdict} for rowdict in rowslist]
+    expdf1 = pd.DataFrame(expdflst)
+    assert len(expdflst) > 0, f'No experiment spec files at "{source_dir}/z*_expspec.yml"'
 
-    colnames = ['fpidx', 'experiment', 'smrykey']
-    expdf = pd.DataFrame(exps, columns=colnames)
+    keep_exps = [experiment for experiment in expdf1['experiment'].unique().tolist()
+        if any(fnmatch.fnmatch(experiment, pat) for pat in exp_pats)]
+    expdf2 = expdf1[expdf1['experiment'].isin(keep_exps)]
+    print(f'The experiments to summarize are {keep_exps}\n', flush=True)
 
-    for experiment, edf in expdf.groupby('experiment'):
+    # Generating the summary files for each experiment
+    for experiment, edf in expdf2.groupby('experiment'):
         smrypath = f'{summary_dir}/{experiment}.h5'
 
         do_summarize = True
