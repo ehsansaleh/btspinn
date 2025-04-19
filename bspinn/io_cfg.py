@@ -14,6 +14,7 @@ configs_dir = f'{PROJPATH}/configs'
 results_dir = f'{PROJPATH}/results'
 storage_dir = f'{PROJPATH}/storage'
 summary_dir = f'{PROJPATH}/summary'
+source_dir = f'{PROJPATH}/{projname.replace("code_", "")}'
 
 # The key specs used for summarization
 keyspecs = [('hp',         'last'),
