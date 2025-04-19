@@ -1,19 +1,22 @@
 # ---
 # jupyter:
 #   jupytext:
-#     formats: ipynb,py
+#     formats: ipynb,py:hydrogen
 #     text_representation:
 #       extension: .py
-#       format_name: light
-#       format_version: '1.5'
-#       jupytext_version: 1.14.4
+#       format_name: hydrogen
+#       format_version: '1.3'
+#       jupytext_version: 1.15.2
 #   kernelspec:
 #     display_name: venv
 #     language: python
 #     name: python3
 # ---
 
-# + tags=["active-ipynb"]
+# %% [markdown]
+# ## The Smoluchowski Problem Script
+
+# %% tags=["active-ipynb"]
 # import matplotlib.pyplot as plt
 # import importlib
 # %matplotlib inline
@@ -25,8 +28,29 @@
 #     set_matplotlib_formats('retina')
 #
 # plt.ioff();
-# -
 
+# %% tags=["active-ipynb"]
+# # This cell is a sorry attempt at integrating the code onto google colab.
+# # Feel free to remove this cell if you are not using google colab.
+#
+# import os, sys, sysconfig
+# from importlib.util import find_spec
+# is_colab = 'google.colab' in sys.modules
+# site_userpkg = sysconfig.get_paths()['purelib']
+# req_pkgscolab = ['tensorboardX', 'pyinstrument']
+# if is_colab and any(find_spec(pkg) is None for pkg in req_pkgscolab):
+#     ! pip install {" ".join(req_pkgscolab)}
+# if is_colab and not os.path.exists('/content/btspinn/'):
+#     ! cd /content && git clone https://github.com/ehsansaleh/btspinn.git
+#     ! cd /content/btspinn && pip install -e . && rm -rf *.egg-info
+# if is_colab and (find_spec('bspinn') is None):
+#     ! ln -s /content/btspinn/bspinn {site_userpkg}/bspinn
+# elif is_colab:
+#     ! [ -L {site_userpkg}/bspinn ] && rm {site_userpkg}/bspinn
+# if is_colab and os.path.exists('/content/btspinn/notebook'):
+#     os.chdir('/content/btspinn/notebook')
+
+# %%
 import numpy as np
 import torch
 import json
@@ -53,7 +77,7 @@ from collections import defaultdict
 from collections import OrderedDict as odict
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-# +
+# %%
 from bspinn.io_utils import DataWriter
 from bspinn.io_utils import get_git_commit
 from bspinn.io_utils import preproc_cfgdict
@@ -69,12 +93,8 @@ from bspinn.tch_utils import profmem
 from bspinn.io_cfg import configs_dir
 from bspinn.io_cfg import results_dir
 from bspinn.io_cfg import storage_dir
-# -
 
-# ## Theory
-#
-# To be completed
-
+# %%
 pgms_cntr = 0
 be_verbose = False
 def print_gpumem_stat(tch_device):
@@ -89,9 +109,10 @@ def print_gpumem_stat(tch_device):
     pgms_cntr += 1
 
 
+# %% [markdown]
 # ## Finding the Exact Smolluchowski Sum
 
-# +
+# %%
 class SMSum:
     def __init__(self, dim, n_gpd, x_high, get_kernel):
         """
@@ -464,17 +485,16 @@ class RhoLin:
         return rho
 
 
-# -
-
+# %% [markdown]
 # ### Some Tested Settings
 
-# + tags=["active-ipynb"]
+# %% tags=["active-ipynb"]
 # ex_device_name = 'cuda:0'
 # ex_tch_device = torch.device(ex_device_name)
 # ex_tch_dtype = torch.double
 # be_verbose = True
 
-# + tags=["active-ipynb"]
+# %% tags=["active-ipynb"]
 # """
 # This setting has a moderate "variance to squared-mean" ratio for the time derivative:
 #    E_{xi}[Var_{xj}(d\rho/dt)] = 3.15
@@ -494,7 +514,7 @@ class RhoLin:
 # ex_dt_g = ex_t_high / 100.0
 # ex_ker_name, ex_rhoi_name = 'harmonic_A', 'lin_A'
 
-# + tags=["active-ipynb"]
+# %% tags=["active-ipynb"]
 # """
 # The following was tested to produce issues for high-variance trainings.
 # We used w_tot, w_ic = 1.0, 1.0 was used in this trainings.
@@ -519,7 +539,7 @@ class RhoLin:
 # ex_t_high = 0.03
 # ex_dt_g = ex_t_high / 100.0
 
-# + tags=["active-ipynb"]
+# %% tags=["active-ipynb"]
 # """
 # This setting has a long x tail with zero kernel and thus no time derivates.
 # The long kernel-less tak makes R high, since uniform sampling of j for the 
@@ -540,7 +560,7 @@ class RhoLin:
 # ex_t_high = 1.0
 # ex_dt_g = ex_t_high / 100.0
 
-# + tags=["active-ipynb"]
+# %% tags=["active-ipynb"]
 # """
 # This setting has a long x tail with zero kernel and thus no time derivates.
 # The long kernel-less tak makes R high, since uniform sampling of j for the 
@@ -559,11 +579,11 @@ class RhoLin:
 # ex_get_rhoinit = RhoLin(bias=ex_rho1, slope=ex_islope)
 # ex_t_high = 0.01
 # ex_dt_g = ex_t_high / 100.0
-# -
 
+# %% [markdown]
 # ### Running Smolluchowski Simulation 
 
-# + tags=["active-ipynb"]
+# %% tags=["active-ipynb"]
 # """
 # This setting has a moderate "variance to squared-mean" ratio for the time derivative:
 #    E_{xi}[Var_{xj}(d\rho/dt)] = 3.15
@@ -583,7 +603,7 @@ class RhoLin:
 # ex_dt_g = ex_t_high / 100.0
 # ex_ker_name, ex_rhoi_name = 'harmonic_A', 'lin_A'
 
-# + tags=["active-ipynb"]
+# %% tags=["active-ipynb"]
 # ex_n_g = ex_n_gpd ** ex_dim
 # print_gpumem_stat(ex_tch_device)
 # ex_smsolver = SMSum(ex_dim, ex_n_gpd, ex_x_high, ex_get_kernel)
@@ -629,7 +649,7 @@ class RhoLin:
 #     print(f'Mean Time Derivative Variance = {bb:.4f}')
 #     print(f'Mean-to-Mean Ratio.           = {bb/aa:.4f}')
 
-# + tags=["active-ipynb"]
+# %% tags=["active-ipynb"]
 # ########################################
 # ################ Plotting ##############
 # ########################################
@@ -695,11 +715,11 @@ class RhoLin:
 #     fig.set_tight_layout(True)
 #     
 # fig
-# -
 
+# %% [markdown]
 # ### Utitlity functions
 
-# +
+# %%
 def get_nn_sol(model, x, n_eval=None, out_lib='numpy'):
     """
     Gets a model and evaluates it minibatch-wise on the tensor x. 
@@ -787,10 +807,10 @@ def plot_sol(x1_msh_np, x2_msh_np, y_msh_np, fig=None, ax=None, cax=None):
     return fig, ax, cax
 
 
-# -
-
+# %% [markdown]
 # ### Defining the Sampler
 
+# %%
 class XSampler:
     def __init__(self, batch_rng):
         self.batch_rng = batch_rng
@@ -854,10 +874,13 @@ class XSampler:
         return ret_dict
 
 
+# %% [markdown]
 # ## JSON Config Loading and Preprocessing
 
-# + tags=["active-ipynb"]
+# %% tags=["active-ipynb"]
 # json_cfgpath = f'../configs/02_smoll/02_mse.yml'
+# ! rm -rf "./10_smoluchowski/results/02_mse.h5"
+# ! rm -rf "./10_smoluchowski/storage/02_mse"
 #
 # if json_cfgpath.endswith('.json'):
 #     with open(json_cfgpath, 'r') as fp:
@@ -868,22 +891,22 @@ class XSampler:
 # else:
 #     raise RuntimeError(f'unknown config extension: {json_cfgpath}')
 #
-# json_cfgdict['io/config_id'] = '01_test'
+# json_cfgdict['io/config_id'] = '02_mse'
 # json_cfgdict['io/results_dir'] = './10_smolluchowski/results'
 # json_cfgdict['io/storage_dir'] = './10_smolluchowski/storage'
-# json_cfgdict['io/tch/device'] = 'cuda:0'
+# json_cfgdict['io/tch/device'] = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 #
 # all_cfgdicts = preproc_cfgdict(json_cfgdict)
 # cfg_dict_input = all_cfgdicts[0]
 
-# + tags=["active-py"]
+# %% tags=["active-py"]
 def main(cfg_dict_input):
 
 
-# -
-
+# %% [markdown]
 # ## Retrieving Config Variables
 
+    # %%
     cfg_dict = cfg_dict_input.copy()
 
     #########################################################
@@ -1669,8 +1692,10 @@ def main(cfg_dict_input):
     for opt, val in etc_dict_.items():
         etc_dict[opt] = [val] * n_seeds
 
+# %% [markdown]
 # ### Training
 
+    # %%
     if results_dir is not None:
         pathlib.Path(os.sep.join([results_dir, cfg_tree])
                      ).mkdir(parents=True, exist_ok=True)
@@ -2304,7 +2329,7 @@ def main(cfg_dict_input):
         with open(htmlpath, 'w') as fp:
             fp.write(html.encode('ascii', errors='ignore').decode('ascii'))
 
-# + tags=["active-py"]
+    # %% tags=["active-py"]
     return outdict
 
     
@@ -2462,5 +2487,5 @@ if __name__ == '__main__':
         print(f'>> [dry-run] Cleaning up {temp_strdir.name}')
         temp_strdir.cleanup()
 
-# + active=""
+# %% [raw]
 #
