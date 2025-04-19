@@ -6,7 +6,17 @@
 #  Note:
 #    Here you can add your own environment activation commands whether you're
 #    using conda, virtualenv, etc.
-[[ -f venv/bin/activate ]] && source venv/bin/activate
+SCRIPTDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+if [[ $1 == "venv" || $1 == "" ]]; then
+  [[ ! -f ${SCRIPTDIR}/venv/bin/activate ]] && echo "venv does not exist" && return 1;
+  source ${SCRIPTDIR}/venv/bin/activate
+elif [[ $1 == "mamba" ]]; then
+  [[ ! -f ${SCRIPTDIR}/mamba/bin/micromamba ]] && echo "mamba does not exist" && return 1;
+  export MAMBA_ROOT_PREFIX=${SCRIPTDIR}/mamba
+  eval "$(${SCRIPTDIR}/mamba/bin/micromamba shell hook -s posix)"
+  micromamba activate bspinn
+fi
 
 # Note: You do not need to modify the following sections at all.
 ################################################################################
@@ -17,7 +27,6 @@
 #   import path without any installations through pip or other invasive actions
 #   to the environment. This allows researchers to make modifications and treat
 #   the code like a module at the same time.
-SCRIPTDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJPARTENTDIR=$(dirname $SCRIPTDIR)
 source $SCRIPTDIR/bspinn/bashfuncs.sh
 field_append PYTHONPATH $SCRIPTDIR
