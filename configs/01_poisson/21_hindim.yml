@@ -1,0 +1,650 @@
+# An optional description of this config.
+desc: Example hi-dimensional delta poisson solution with various methods
+# Date of the experimentation. This is optional and will not be used in training or summarization.
+date: April 1, 2024
+
+# The random number generator's list of seeds:
+#   1. The range of values must be specified in a pythonic manner: [start, stop, step]
+#   2. The number of models trained in parallel is determined by this option; this option
+#      determines the number of completely independent models trained in parallel.
+#   3. You can specify the list of seeds manually using the alternative `rng_seed/list` key.
+rng_seed/range: [0, 100000, 1000]
+# The type of problem. This is mainly used to make sure the correct script is running this config.
+problem: poisson
+
+###################################################################################################
+################################ The Optimization Hyper-parameters ################################
+###################################################################################################
+# The optimizer's type. Available options are 'adam' and 'sgd'.
+opt/dstr: adam
+# The optimizer's learning rate.
+opt/lr: 0.001
+# The number of optimization iterations. 
+# This is the same as the number of `.step()` calls to the optimizer. 
+opt/epoch: 200000
+
+###################################################################################################
+###################### Standard Training, Double Sampling and Delayed Target ######################
+###################################################################################################
+# The following 3 groups specify the options for running the standard training, double sampling 
+# and delayed target methods. The numerical quadrature and QMC are specified in the next section.
+
+# The problem dimensions.
+h01/dim/list: [2, 3, 4, 5, 6, 7, 8, 9, 10]
+# The surface point sampling type:
+#   1. `rng` means that the surface points are sampled randomly from a random generator.
+#   2. `quad` means that the surface points must be sampled according to some numerical 
+#      quadrature rules.
+#   3. `qmc` means that the surface points must be sampled from a set of low-discrepency 
+#      sequences, commonly knows as the quasi monte-carlo methods.
+h01/srfpts/samp/dstr: rng
+# The transformation process of raw random numbers into surface points on a ball. Assuming a 
+# 10-dimensional poisson problem:
+#   1. `normscale` refers to the process of sampling 10-dimensional normal random variables, 
+#      and then normalizing them to fall on a unit sphere in the 10-dimensional space.
+#   2. `cube2sphr` refers to the process of sampling 9-dimensional uniform random variables, 
+#      and then applying a trigonometrical integration process to obtain samples on a unit 
+#      sphere in the 10-dimensional space.
+#  Section C.6 and Figure 18 of the supplementary material discuss this hyper-parameter.
+h01/srfpts/trnsfrm/dstr: normscale
+# Whether the sampled surface points must be shuffled or not.
+h01/srfpts/samp/shflpts: true
+
+###########################################################
+############## The Standard Training Method ###############
+###########################################################
+# The number of training volumes (balls) in each training iteration. In other words, this 
+# corresponds to the mini-batch size for the SGD optimizer. 
+g01/h01/vol/n/list: [500, 10]
+# The number of surface points evaluated by the main model.
+g01/h01/srfpts/n/mdl/list: [1, 1]
+# The number of surface points evaluated by the target model.
+g01/h01/srfpts/n/trg/list: [1, 100] 
+# Whether to use the double-sampling trick for constructing the training loss.
+g01/h01/srfpts/dblsmpl: false
+# Whether to use the delayed target method or not.
+g01/h01/trg/btstrp: false
+
+###########################################################
+################ The Double Sampling Trick ################
+###########################################################
+# The number of training volumes (balls) in each training iteration. In other words, this 
+# corresponds to the mini-batch size for the SGD optimizer. 
+g02/h01/vol/n/list: [500, 10] 
+# The number of surface points evaluated by the main model.
+g02/h01/srfpts/n/mdl: 0 
+# The number of surface points evaluated by the target model.
+g02/h01/srfpts/n/trg/list: [2, 100] 
+# Whether to use the double-sampling trick for constructing the training loss.
+g02/h01/srfpts/dblsmpl: true
+# Whether to use the delayed target method or not.
+g02/h01/trg/btstrp: false
+
+###########################################################
+################ The Delayed Target Method ################
+###########################################################
+# The number of training volumes (balls) in each training iteration. In other words, this 
+# corresponds to the mini-batch size for the SGD optimizer. 
+g03/h01/vol/n/list: [500, 100, 10]
+# The number of surface points evaluated by the main model.
+g03/h01/srfpts/n/mdl/list: [1, 6, 51] 
+# The number of surface points evaluated by the target model.
+g03/h01/srfpts/n/trg/list: [1, 5, 50]
+# Whether to use the double-sampling trick for constructing the training loss.
+g03/h01/srfpts/dblsmpl: false
+# Whether to use the delayed target method or not.
+g03/h01/trg/btstrp: true
+# The target smoothing factor in the delayed target method. 
+# This corresponds to the $\tau$ hyper-parameter in Algorithm 1 of the main paper.
+g03/h01/trg/tau: 0.996
+# The target regularization weight in the delayed target method. 
+# This corresponds to the $\lambda$ hyper-parameter in Algorithm 1 of the main paper.
+g03/h01/trg/reg/w: 4.0
+# The target weight in the delayed target method. 
+# This determines the `M` hyper-parameter in Equation 5 of the main paper; The target weight is 
+# essentially the same as $(M-1)/M$.
+g03/h01/trg/w: 0.99
+
+###################################################################################################
+######################## Numerical Quadrature and Quasi-Monte Carlo Methods #######################
+###################################################################################################
+# The following 3 groups specify the options for running the Gaussian and Leja quadrature and the 
+# QMC methods. The standard training, double sampling and delayed target methods are specified in 
+# the previous section.
+
+###########################################################
+############ The Numerical Quadrature Methods #############
+###########################################################
+# The following are the commong settings for Gaussian and Leja quadratures.
+
+# The surface point sampling type:
+#   1. `rng` means that the surface points are sampled randomly from a random generator.
+#   2. `quad` means that the surface points must be sampled according to some numerical 
+#      quadrature rules.
+#   3. `qmc` means that the surface points must be sampled from a set of low-discrepency 
+#      sequences, commonly knows as the quasi monte-carlo methods.
+h02/srfpts/samp/dstr: quad
+# The numerical quadrature polynomial order. This determines the total number of 
+# model and target points for each problem dimensions. Higher orders can be more accurate 
+# but almost computationally intractable.
+h02/srfpts/samp/order: 2
+# The transformation process of raw random numbers into surface points on a ball. Assuming a 
+# 10-dimensional poisson problem:
+#   1. `normscale` refers to the process of sampling 10-dimensional normal random variables, 
+#      and then normalizing them to fall on a unit sphere in the 10-dimensional space.
+#   2. `cube2sphr` refers to the process of sampling 9-dimensional uniform random variables, 
+#      and then applying a trigonometrical integration process to obtain samples on a unit 
+#      sphere in the 10-dimensional space.
+#  Section C.6 and Figure 18 of the supplementary material discuss this hyper-parameter.
+h02/srfpts/trnsfrm/dstr: cube2sphr
+# The number of points for computing the following  1-dimensional integral when applying the 
+# `cube2sphr` transformation process:
+#    $$ \int_{0}^{\pi} \sin^{n}(\phi) \text{d}{\phi}. $$
+# This process is explained in detail in the `notebook/22_quadquas.ipynb` notebook under the 
+# "Uniform Sphere Sampling" section.
+h02/srfpts/trnsfrm/n_cdfint: 1000000
+# Whether to use a Smolyak sparse grid for the numerical quadrature methods; a sparse grid reduces
+# the required samples significantly at a specific problem dimension and quadrature order.
+h02/srfpts/samp/sparse: true
+# The recursion algorithm. This is passed down to the ChaosPy library for evaluating the numerical 
+# quadrature samples.
+h02/srfpts/samp/rcuralg: stieltjes
+# Whether the sampled surface points must be shuffled or not.
+h02/srfpts/samp/shflpts: true
+# The number of surface points evaluated by the main model.
+h02/srfpts/n/mdl: 1
+# Whether to use the double-sampling trick for constructing the training loss.
+h02/srfpts/dblsmpl: false
+# Whether to use the delayed target method or not.
+h02/trg/btstrp: false
+
+###########################################################
+############# The Guassian Quadrature Method ##############
+###########################################################
+# The sampling rule for quadrature and QMC method. 
+#  1. The available quadrature rules are as follows:
+#    `['leja', 'lobatto', 'radau', 'legendre',
+#      'clenshaw_curtis', 'newton_cotes', 'gaussian', 'fejer_2',
+#      'genz_keister_16','patterson', 'genz_keister_18', 'genz_keister_22',
+#      'genz_keister_24', 'kronrod','fejer_1']`.
+#  2. The available quadrature rules are as follows:
+#    `['additive_recursion', 'halton', 'hammersley', 'korobov', 
+#      'sobol', 'latin_hypercube']`.
+# For each quadrature rule, the total number of main and target samples must be 
+# pre-calculated at each dimension; these values are outside of the user's control 
+# and are only provided to pass some assertions and make sure the user is fully aware 
+# of the sample complexity.
+# The QMC rules are less restrictive in this regard and the user has more freedom 
+# when determining the total number of main and target samples.
+g04/h02/srfpts/samp/rule: gaussian
+# The problem dimensions.
+g04/h02/dim/list: [2, 3, 4, 5, 6, 7, 8, 9, 10]
+# The number of surface points evaluated by the target model.
+g04/h02/srfpts/n/trg/list: [2, 13, 27, 44, 65, 90, 119, 152, 189]
+# The number of training volumes (balls) in each training iteration. In other words, this 
+# corresponds to the mini-batch size for the SGD optimizer. 
+g04/h02/vol/n/list: [333, 71, 35, 22, 15, 10, 8, 6, 5]
+
+###########################################################
+############### The Leja Quadrature Method ################
+###########################################################
+# The quadrature sampling rule. The available options are as follows:
+#  `['leja', 'lobatto', 'radau', 'legendre',
+#    'clenshaw_curtis', 'newton_cotes', 'gaussian', 'fejer_2',
+#    'genz_keister_16','patterson', 'genz_keister_18', 'genz_keister_22',
+#    'genz_keister_24', 'kronrod','fejer_1']`.
+# For each rule, the total number of main and target samples must be 
+# specified at each dimension.
+g05/h02/srfpts/samp/rule: leja 
+# The problem dimensions.
+g05/h02/dim/list: [2, 3, 4, 5, 6, 7, 8, 9, 10]
+# The number of surface points evaluated by the target model.
+g05/h02/srfpts/n/trg/list: [2, 5, 9, 14, 20, 27, 35, 44, 54]
+# The number of training volumes (balls) in each training iteration. In other words, this 
+# corresponds to the mini-batch size for the SGD optimizer. 
+g05/h02/vol/n/list: [333, 166, 100, 66, 47, 35, 27, 22, 18]
+
+###########################################################
+############## The Quasi Monte Carlo Method ###############
+###########################################################
+# The surface point sampling type:
+#   1. `rng` means that the surface points are sampled randomly from a random generator.
+#   2. `quad` means that the surface points must be sampled according to some numerical 
+#      quadrature rules.
+#   3. `qmc` means that the surface points must be sampled from a set of low-discrepency 
+#      sequences, commonly knows as the quasi monte-carlo methods.
+g06/srfpts/samp/dstr: qmc
+# # The sampling rule for quadrature and QMC method. 
+#  1. The available quadrature rules are as follows:
+#    `['leja', 'lobatto', 'radau', 'legendre',
+#      'clenshaw_curtis', 'newton_cotes', 'gaussian', 'fejer_2',
+#      'genz_keister_16','patterson', 'genz_keister_18', 'genz_keister_22',
+#      'genz_keister_24', 'kronrod','fejer_1']`.
+#  2. The available quadrature rules are as follows:
+#    `['additive_recursion', 'halton', 'hammersley', 'korobov', 
+#      'sobol', 'latin_hypercube']`.
+# For each quadrature rule, the total number of main and target samples must be 
+# pre-calculated at each dimension; these values are outside of the user's control 
+# and are only provided to pass some assertions and make sure the user is fully aware 
+# of the sample complexity.
+# The QMC rules are less restrictive in this regard and the user has more freedom 
+# when determining the total number of main and target samples.
+g06/srfpts/samp/rule: additive_recursion
+# Whether the QMC sampled points should be antithetic (mirroring each other) or not. 
+# This option is passed down to the ChaosPy library.
+g06/srfpts/samp/antithetic: null
+# The transformation process of raw random numbers into surface points on a ball. Assuming a 
+# 10-dimensional poisson problem:
+#   1. `normscale` refers to the process of sampling 10-dimensional normal random variables, 
+#      and then normalizing them to fall on a unit sphere in the 10-dimensional space.
+#   2. `cube2sphr` refers to the process of sampling 9-dimensional uniform random variables, 
+#      and then applying a trigonometrical integration process to obtain samples on a unit 
+#      sphere in the 10-dimensional space.
+#  Section C.6 and Figure 18 of the supplementary material discuss this hyper-parameter.
+g06/srfpts/trnsfrm/dstr: cube2sphr
+# The number of points for computing the following  1-dimensional integral when applying the 
+# `cube2sphr` transformation process:
+#    $$ \int_{0}^{\pi} \sin^{n}(\phi) \text{d}{\phi}. $$
+# This process is explained in detail in the `notebook/22_quadquas.ipynb` notebook under the 
+# "Uniform Sphere Sampling" section.
+g06/srfpts/trnsfrm/n_cdfint: 1000000
+# Whether the sampled surface points must be shuffled or not.
+g06/srfpts/samp/shflpts: true
+# Whether to use the double-sampling trick for constructing the training loss.
+g06/srfpts/dblsmpl: false
+# Whether to use the delayed target method or not.
+g06/trg/btstrp: false
+# The number of surface points evaluated by the main model.
+g06/srfpts/n/mdl: 1
+
+# The problem dimensions.
+g06/dim/list: [2, 3, 4, 5, 6, 7, 8, 9, 10]
+# The number of surface points evaluated by the target model.
+g06/srfpts/n/trg/list: [1, 100]
+# The number of training volumes (balls) in each training iteration. In other words, this 
+# corresponds to the mini-batch size for the SGD optimizer. 
+g06/vol/n/list: [500, 10]
+
+###################################################################################################
+########################### The Function Approximation Hyper-parameters ###########################
+###################################################################################################
+# The type of neural network. The only available option is `mlp`.
+nn/dstr: mlp
+# The width of the neural network; this is the number of neural units in each layer.
+nn/width: 64
+# The number of hidden layers in the neural network.
+nn/hidden: 4
+# The activation function of the network. The available values are `['silu', 'tanh', 'relu']`.
+nn/act: silu 
+
+###################################################################################################
+################################ The Poisson Charge Specifications ################################
+###################################################################################################
+# This section defines the Poisson charges. Note that these are problem-defining hyper-parameters, 
+# as opposed to optimization or solver-related hyper-parameters.
+
+# The poisson charges type. The only available option is `dmm` (i.e., "Delta Mixture Model").
+chrg/dstr: dmm
+# The number of delta charges in the mixture.
+chrg/n: 1
+# The weight of each delta charge.
+chrg/w: [1.0]
+# The location of the delta charges.
+chrg/mu: [[0.0]]
+
+###################################################################################################
+######################## The Training Integration Volume Hyper-Parameters #########################
+###################################################################################################
+# The type of the training volumes. The only available option is 'ball'.
+vol/dstr: ball
+
+# The training volume center distribution:
+#   1. `ball` means that the training volume centers will be sampled in an IID and uniform manner 
+#       within a ball.
+#   2. `uniform` means the ball centers are sampled uniformly within a cube.
+#   3. `normal` means the ball centers are sampled from a normal distribution.
+vol/c/dstr: ball
+# The hyper-center of the uniform ball used for uniformly sampling the training volume centers.
+vol/c/c:  [0.0]
+# The hyper-radius of the uniform ball used for uniformly sampling the training volume centers.
+vol/c/r:   1.0
+
+# The training volume radius distribution:
+#   1. `uniform` makes the radii themselves sampled uniformly from a 1-d interval.
+#   2. `unifdpow` samples the radii such that their `d`-th power is distributed uniformly, where 
+#      `d` is the problem space dimension.
+vol/r/dstr: unifdpow
+# The lower end of the sampled radii for the training volumes.
+vol/r/low:  0.0
+# The higher end of the sampled radii for the training volumes.
+vol/r/high: 1.0
+
+###################################################################################################
+############################## The Evaluation Distribution Profiles ###############################
+###################################################################################################
+
+###########################################################
+###### The "IID Uniform Rectangle" Evaluation Profile #####
+###########################################################
+
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle.
+#   2. `ball` dentoes sampling uniformly from a ball.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes.
+eval/iidur/dstr: uniform
+# The lower-left corner of the rectangle for sampling the evaluation points uniformly.
+eval/iidur/low:  [-1.0]
+# The top-right corner of the rectangle for sampling the evaluation points uniformly.
+eval/iidur/high: [ 1.0]
+# Whether the points radii and angles should sampled independently or in a joint manner.
+eval/iidur/rx/dstr: joint
+# Whether the sampled points must be static (i.e., sampled once at the beginning and fixed).
+eval/iidur/rx/static: false
+# The size of the evaluation points set.
+eval/iidur/n: 5000
+# The frequency of evaluation in epochs.
+eval/iidur/frq: 500
+
+###########################################################
+####### The "IID Uniform Ball 1" Evaluation Profile #######
+###########################################################
+
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle.
+#   2. `ball` dentoes sampling uniformly from a ball.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes.
+eval/iidub1/dstr: ball
+# The center of the ball for sampling the evaluation points uniformly.
+eval/iidub1/c: [0.0]
+# The radius of the ball for sampling the evaluation points uniformly.
+eval/iidub1/r: 1.0
+# Whether the points radii and angles should sampled independently or in a joint manner.
+eval/iidub1/rx/dstr: joint
+# Whether the sampled points must be static (i.e., sampled once at the beginning and fixed).
+eval/iidub1/rx/static: false
+# The size of the evaluation points set.
+eval/iidub1/n: 5000
+# The frequency of evaluation in epochs.
+eval/iidub1/frq: 500
+
+###########################################################
+## The "Deterministic Uniform Ball 1" Evaluation Profile ##
+###########################################################
+# In the `detub1` evaluation profile, the points radii and angles are sampled independently 
+# and deterministically. This was explained in more detail in Section D.8 and Algorithm 2 of 
+# the supplementary material.
+
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle.
+#   2. `ball` dentoes sampling uniformly from a ball.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes.
+eval/detub1/dstr: ball
+# The center of the ball for sampling the evaluation points uniformly.
+eval/detub1/c: [0.0]
+# The radius of the ball for sampling the evaluation points uniformly.
+eval/detub1/r: 1.0
+# Whether the points radii and angles should sampled independently or in a joint manner.
+eval/detub1/rx/dstr: indep
+# Whether the point radii should be sampled in a deterministic or IID manner.
+eval/detub1/rx/r/dstr: det
+# The number of radii bins when deterministically sampling of the points radii.
+eval/detub1/rx/r/n: 5
+# Whether the point angles should sampled in a deterministic or IID manner.
+eval/detub1/rx/x/dstr: iid
+# Whether the sampled angles must be static (i.e., sampled once at the beginning and fixed).
+eval/detub1/rx/x/static: true
+# The size of the evaluation points set.
+eval/detub1/n: 5000
+# The frequency of evaluation in epochs.
+eval/detub1/frq: 500
+
+###########################################################
+##### The "IID Uniform Ball 2" Evaluation Profile ######
+###########################################################
+# The `iidub2` is the same as `iidub1` profile, except the ball radius is set to `sqrt(2)` 
+# rather than one.
+
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle.
+#   2. `ball` dentoes sampling uniformly from a ball.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes.
+eval/iidub2/dstr: ball
+# The center of the ball for sampling the evaluation points uniformly.
+eval/iidub2/c: [0.0]
+# The radius of the ball for sampling the evaluation points uniformly.
+eval/iidub2/r: sqrt(dim)
+# Whether the points radii and angles should sampled independently or in a joint manner.
+eval/iidub2/rx/dstr: joint
+# Whether the sampled points must be static (i.e., sampled once at the beginning and fixed).
+eval/iidub2/rx/static: false
+# The size of the evaluation points set.
+eval/iidub2/n: 5000
+# The frequency of evaluation in epochs.
+eval/iidub2/frq: 500
+
+###########################################################
+## The "Deterministic Uniform Ball 2" Evaluation Profile ##
+###########################################################
+# In the `detub2` evaluation profile is identical to the `detub1` profile, except the ball radius 
+# is set to `sqrt(2)` rather than one.
+
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle.
+#   2. `ball` dentoes sampling uniformly from a ball.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes.
+eval/detub2/dstr: ball
+# The center of the ball for sampling the evaluation points uniformly.
+eval/detub2/c: [0.0]
+# The radius of the ball for sampling the evaluation points uniformly.
+eval/detub2/r: sqrt(dim)
+# Whether the points radii and angles should sampled independently or in a joint manner.
+eval/detub2/rx/dstr: indep
+# Whether the point radii should be sampled in a deterministic or IID manner.
+eval/detub2/rx/r/dstr: det
+# The number of radii bins when deterministically sampling of the points radii.
+eval/detub2/rx/r/n: 5
+# Whether the point angles should sampled in a deterministic or IID manner.
+eval/detub2/rx/x/dstr: iid
+# Whether the sampled angles must be static (i.e., sampled once at the beginning and fixed).
+eval/detub2/rx/x/static: true
+# The size of the evaluation points set.
+eval/detub2/n: 5000
+# The frequency of evaluation in epochs.
+eval/detub2/frq: 500
+
+###########################################################
+##### The "IID Training Volume 1" Evaluation Profile ######
+###########################################################
+# In the `iidtv1` profile, the evaluation points are sampled uniformly from within the training 
+# volumes.
+
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle.
+#   2. `ball` dentoes sampling uniformly from a ball.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes. 
+eval/iidtv1/dstr: trnvol
+# Whether the points radii and angles should sampled independently or in a joint manner.
+eval/iidtv1/rx/dstr: joint
+# Whether the sampled angles must be static (i.e., sampled once at the beginning and fixed).
+eval/iidtv1/rx/static: false
+# The size of the evaluation points set.
+eval/iidtv1/n: 250000
+# The frequency of evaluation in epochs.
+eval/iidtv1/frq: 2500
+
+###########################################################
+# The "Determinstic Training Volume 2" Evaluation Profile #
+###########################################################
+# In the `dettv2` profile, the radii and the angles of the evaluation points are sampled 
+# independently. The radii are sampled deterministically using 50 equally-spaced quantiles.
+# The angles are sampled in an iid manner, and are fixed throughout the training.
+
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle.
+#   2. `ball` dentoes sampling uniformly from a ball.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes. 
+eval/dettv2/dstr: trnvol
+# Whether the points radii and angles should sampled independently or in a joint manner.
+eval/dettv2/rx/dstr: indep
+# Whether the point radii should be sampled in a deterministic or IID manner.
+eval/dettv2/rx/r/dstr: det
+# The number of radii bins when deterministically sampling of the points radii.
+eval/dettv2/rx/r/n: 50
+# Whether the point angles should sampled in a deterministic or IID manner.
+eval/dettv2/rx/x/dstr: iid
+# Whether the sampled angles must be static (i.e., sampled once at the beginning and fixed).
+eval/dettv2/rx/x/static: true
+# The size of the evaluation points set.
+eval/dettv2/n: 50000
+# The frequency of evaluation in epochs.
+eval/dettv2/frq: 500
+
+###########################################################
+# The "Determinstic Training Volume 3" Evaluation Profile #
+###########################################################
+# In the `dettv3` profile, the radii and the angles of the evaluation points are sampled 
+# independently. The radii are sampled deterministically using 500 equally-spaced quantiles.
+# The angles are sampled in an iid manner, and are fixed throughout the training.
+
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle.
+#   2. `ball` dentoes sampling uniformly from a ball.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes. 
+eval/dettv3/dstr: trnvol
+# Whether the points radii and angles should sampled independently or in a joint manner.
+eval/dettv3/rx/dstr: indep
+# Whether the point radii should be sampled in a deterministic or IID manner.
+eval/dettv3/rx/r/dstr: det
+# The number of radii bins when deterministically sampling of the points radii.
+eval/dettv3/rx/r/n: 500
+# Whether the point angles should sampled in a deterministic or IID manner.
+eval/dettv3/rx/x/dstr: iid
+# Whether the sampled angles must be static (i.e., sampled once at the beginning and fixed).
+eval/dettv3/rx/x/static: true
+# The size of the evaluation points set.
+eval/dettv3/n: 250000
+# The frequency of evaluation in epochs.
+eval/dettv3/frq: 2500
+
+###########################################################
+##### The "IID Training Volume 1" Evaluation Profile ######
+###########################################################
+# In the `iidtv4` profile, the evaluation points are sampled uniformly from within the training 
+# volumes. As opposed to `iidtv1`, the evaluation points are fixed during training.
+
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle.
+#   2. `ball` dentoes sampling uniformly from a ball.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes. 
+eval/iidtv4/dstr: trnvol
+# Whether the points radii and angles should sampled independently or in a joint manner.
+eval/iidtv4/rx/dstr: joint
+# Whether the sampled angles must be static (i.e., sampled once at the beginning and fixed).
+eval/iidtv4/rx/static: true
+# The size of the evaluation points set.
+eval/iidtv4/n: 250000
+# The frequency of evaluation in epochs.
+eval/iidtv4/frq: 2500
+
+###########################################################
+# The "Determinstic Training Volume 5" Evaluation Profile #
+###########################################################
+# In the `dettv5` profile, the radii and the angles of the evaluation points are sampled 
+# independently. The radii are sampled in an iid manner using 500 samples. The angles are 
+# sampled in an iid manner, and are fixed throughout the training.
+
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle.
+#   2. `ball` dentoes sampling uniformly from a ball.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes. 
+eval/dettv5/dstr: trnvol
+# Whether the points radii and angles should sampled independently or in a joint manner.
+eval/dettv5/rx/dstr: indep
+# Whether the point radii should be sampled in a deterministic or IID manner.
+eval/dettv5/rx/r/dstr: iid
+# Whether the sampled radii must be static (i.e., sampled once at the beginning and fixed).
+eval/dettv5/rx/r/static: true
+# The number of radii bins when deterministically sampling of the points radii.
+eval/dettv5/rx/r/n: 500
+# Whether the point angles should sampled in a deterministic or IID manner.
+eval/dettv5/rx/x/dstr: iid
+# Whether the sampled angles must be static (i.e., sampled once at the beginning and fixed).
+eval/dettv5/rx/x/static: true
+# The size of the evaluation points set.
+eval/dettv5/n: 250000
+# The frequency of evaluation in epochs.
+eval/dettv5/frq: 2500
+
+###################################################################################################
+################################# The I/O Logistics and Settings ##################################
+###################################################################################################
+# The statistics averaging frequency. A value of 100 means that the training statistics are 
+# averaged every 100 steps before being stored in the disk.
+io/avg/frq: 100
+# The model parameters checkpointing frequency. A value of 2500 means that a snapshot of the neural 
+# models are stored every 2500 steps.
+io/ckpt/frq: 2500
+# The resource monitoring frequency. A value of 1000 means that a snapshot of the resource utilization  
+# of the system (e.g., the CPU, RAM, GPU utilization) is evaluated and stored every 2500 steps.
+io/mon/frq: 1000
+# The floating point data type used in PyTorch. All floating point tensors and parameters (e.g., 
+# the trained models) will be using this data type.
+io/tch/dtype: float32
+# The GZip compression level of the stored HDF files. 
+io/cmprssn_lvl: 0
+# The evaluation mini-batch size. This is different from the training mini-batch size, and it is 
+# only used inside the evaluation protocol. Since the evaluation sample set may be larger than it 
+# can fit the device memory, this mini-batch size will be used to split the evaluations into 
+# manageable chunks. This setting should have no impact on the computed values. Since this option 
+# can impact the performance of the algorithm, try and set it to the highest value that would not 
+# result in an out of memory error. 
+io/eval/bs: 1024
+# The flushing frequency of the collected results into the disk.
+#   1. A value of 0 means that the entire results (e.g., the training and evaluation 
+#      statistics and model checkpoints) are written once at the end of the training. 
+#   2. A value of 100000 means that the the results are flushed every 100000 epochs to the disk.
+io/flush/frq: 0
+
+###################################################################################################
+################################# The Looping Tree Specification ##################################
+###################################################################################################
+# This config file defines multiple training configurations, and the looping tree defines how 
+# these configurations are derived from the provided values above.
+
+# This specific file is not defining an OVAT style experiment, and each solution method is tested 
+# independently across all the problem space dimensions (from 2 to 10).
+
+# The looping tree specification
+looping/lines: 
+- "cart(aslist('rng_seed'),                                                                                "
+
+- "     cat(cart('h01/dim',                                                                                "
+- "              'h01/srfpts/samp/dstr', 'h01/srfpts/trnsfrm/dstr', 'h01/srfpts/samp/shflpts',             "
+- "              cat(cart(zip('g01/h01/vol/n', 'g01/h01/srfpts/n/mdl', 'g01/h01/srfpts/n/trg'),            "
+- "                  'g01/h01/srfpts/dblsmpl', 'g01/h01/trg/btstrp').lstrip('g01/'),                       "
+- "              cart(zip('g02/h01/vol/n', 'g02/h01/srfpts/n/trg'),                                        "
+- "                   'g02/h01/srfpts/n/mdl', 'g02/h01/srfpts/dblsmpl',                                    "
+- "                   'g02/h01/trg/btstrp').lstrip('g02/'),                                                "
+- "              cart(zip('g03/h01/vol/n', 'g03/h01/srfpts/n/mdl', 'g03/h01/srfpts/n/trg'),                "
+- "                   'g03/h01/srfpts/dblsmpl', 'g03/h01/trg/btstrp', 'g03/h01/trg/tau',                   "
+- "                   'g03/h01/trg/reg/w', 'g03/h01/trg/w').lstrip('g03/'))                                "
+- "             ).lstrip('h01/'),                                                                          "
+
+- "         cart('h02/srfpts/samp/dstr', 'h02/srfpts/samp/order',                                          "
+- "              'h02/srfpts/trnsfrm/dstr', 'h02/srfpts/trnsfrm/n_cdfint',                                 "
+- "              'h02/srfpts/samp/sparse', 'h02/srfpts/samp/rcuralg',                                      "
+- "              'h02/srfpts/samp/shflpts', 'h02/srfpts/n/mdl', 'h02/srfpts/dblsmpl',                      "
+- "              'h02/trg/btstrp',                                                                         "
+- "              cat(cart(zip('g04/h02/dim', 'g04/h02/srfpts/n/trg', 'g04/h02/vol/n'),                     "
+- "                       'g04/h02/srfpts/samp/rule').lstrip('g04/'),                                      "
+- "                  cart(zip('g05/h02/dim', 'g05/h02/srfpts/n/trg', 'g05/h02/vol/n'),                     "
+- "                       'g05/h02/srfpts/samp/rule').lstrip('g05/'))                                      "
+- "             ).lstrip('h02/'),                                                                          "
+
+- "         cart(zip('g06/srfpts/n/trg', 'g06/vol/n'), 'g06/dim',                                          "
+- "              'g06/srfpts/samp/dstr', 'g06/srfpts/samp/rule', 'g06/srfpts/samp/antithetic',             "
+- "              'g06/srfpts/trnsfrm/dstr', 'g06/srfpts/trnsfrm/n_cdfint', 'g06/srfpts/samp/shflpts',      "
+- "              'g06/srfpts/dblsmpl', 'g06/trg/btstrp', 'g06/srfpts/n/mdl'                                "
+- "            ).lstrip('g06/')),                                                                          "
+
+- "     'rest')                                                                                            "
