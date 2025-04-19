@@ -1425,7 +1425,7 @@ def chck_dstrargs(opt, cfgdict, dstr2args, opt2req, parnt_optdstr=None):
 #####################################################
 
 
-def drop_unqcols(df):
+def drop_unqcols(df, exclist=None):
     """
     Returns a copy of the dataframe where all columns
     contaning a single unique value are dropped.
@@ -1434,9 +1434,12 @@ def drop_unqcols(df):
     -----------
     df: (pd.DataFrame) the dataframe with redundant
         columns.
+    exclist: (List or None) the columns excluded from  
+        being dropped even if they had unique values.
     """
+    exclist = exclist if exclist is not None else []
     for col in df.columns:
-        if len(df[col].unique()) == 1:
+        if len(df[col].unique()) == 1 and (col not in exclist):
             df = df.drop(columns=col)
     return df
 
@@ -1488,7 +1491,7 @@ def get_ovatgrps(hpdf):
     """
     uhpdf = hpdf.drop_duplicates().copy()
     uhpdf = uhpdf.drop("fpidx", axis=1)
-    uhpdf = drop_unqcols(uhpdf)
+    uhpdf = drop_unqcols(uhpdf, exclist="fpidxgrp")
     uhpdf = uhpdf.reset_index(drop=True)
 
     mainrow = uhpdf.iloc[0]
@@ -1516,6 +1519,15 @@ def get_ovatgrps(hpdf):
             sortcols = list(dgdf.columns)
             sortcols.remove("fpidxgrp")
             dgdf = dgdf[["fpidxgrp"] + sortcols]
+            
+            # making sure the `sort_values` call does not fail due to 
+            # multiple dtypes existing in the same column. This is a 
+            # bandaid for now.
+            for col in sortcols:
+                coldtypes = {type(x) for x in dgdf[col]}
+                if coldtypes == {str, float}:
+                    dgdf[col] = dgdf[col].astype(str)
+                    
             dgdf = dgdf.sort_values(by=sortcols)
         fpgrps.append(dgdf["fpidxgrp"].tolist())
 
