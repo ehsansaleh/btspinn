@@ -5,11 +5,11 @@
 #       extension: .py
 #       format_name: hydrogen
 #       format_version: '1.3'
-#       jupytext_version: 1.14.4
+#       jupytext_version: 1.15.2
 #   kernelspec:
-#     display_name: bspinn
+#     display_name: Python 3
 #     language: python
-#     name: bspinn
+#     name: python3
 # ---
 
 # %% [markdown]
@@ -25,9 +25,29 @@
 # else:
 #     from IPython.display import set_matplotlib_formats
 #     set_matplotlib_formats('retina')
-#
 # plt.ioff();
 
+
+# %% tags=["active-ipynb"]
+# # This cell is a sorry attempt at integrating the code onto google colab.
+# # Feel free to remove this cell if you are not using google colab.
+#
+# import os, sys, sysconfig
+# from importlib.util import find_spec
+# is_colab = 'google.colab' in sys.modules
+# site_userpkg = sysconfig.get_paths()['purelib']
+# req_pkgscolab = ['tensorboardX', 'pyinstrument', 'chaospy']
+# if is_colab and any(find_spec(pkg) is None for pkg in req_pkgscolab):
+#     ! pip install {" ".join(req_pkgscolab)}
+# if is_colab and not os.path.exists('/content/btspinn/'):
+#     ! cd /content && git clone https://github.com/ehsansaleh/btspinn.git
+#     ! cd /content/btspinn && pip install -e . && rm -rf *.egg-info
+# if is_colab and (find_spec('bspinn') is None):
+#     ! ln -s /content/btspinn/bspinn {site_userpkg}/bspinn
+# elif is_colab:
+#     ! [ -L {site_userpkg}/bspinn ] && rm {site_userpkg}/bspinn
+# if is_colab and os.path.exists('/content/btspinn/notebook'):
+#     os.chdir('/content/btspinn/notebook')
 
 # %%
 import numpy as np
@@ -1660,9 +1680,9 @@ def chck_dstrargs(opt, cfgdict, dstr2args, opt2req, parnt_optdstr=None):
 # ## JSON Config Loading and Preprocessing
 
 # %% code_folding=[1] tags=["active-ipynb"]
-# json_cfgpath = f'../configs/01_poisson/20_hindim.yml'
-# ! rm -rf "./23_poisson/results/20_hindim.h5"
-# ! rm -rf "./23_poisson/storage/20_hindim"
+# json_cfgpath = f'../configs/01_poisson/26_hindim.yml'
+# ! rm -rf "./26_poisson/results/26_hindim.h5"
+# ! rm -rf "./26_poisson/storage/26_hindim"
 # if json_cfgpath.endswith('.json'):
 #     with open(json_cfgpath, 'r') as fp:
 #         json_cfgdict = json.load(fp, object_pairs_hook=odict)
@@ -1671,13 +1691,13 @@ def chck_dstrargs(opt, cfgdict, dstr2args, opt2req, parnt_optdstr=None):
 #         json_cfgdict = odict(yaml.safe_load(fp))
 # else:
 #     raise RuntimeError(f'unknown config extension: {json_cfgpath}')
-# json_cfgdict['io/config_id'] = '20_hindim'
-# json_cfgdict['io/results_dir'] = './23_poisson/results'
-# json_cfgdict['io/storage_dir'] = './23_poisson/storage'
-# json_cfgdict['io/tch/device'] = 'cuda:0'
+# json_cfgdict['io/config_id'] = '26_hindim'
+# json_cfgdict['io/results_dir'] = './26_poisson/results'
+# json_cfgdict['io/storage_dir'] = './26_poisson/storage'
+# json_cfgdict['io/tch/device'] = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 #
 # all_cfgdicts = preproc_cfgdict(json_cfgdict)
-# cfg_dict_input = all_cfgdicts[6]
+# cfg_dict_input = all_cfgdicts[0]
 
 
 # %% tags=["active-py"]
