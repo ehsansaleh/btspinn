@@ -1,0 +1,45 @@
+06_maxwell:
+  - fpidx: 03_maxwell/01_rect
+    smrykey: ''
+
+10_maxwell:
+  - fpidx: 03_maxwell/02_rect
+    smrykey: ''
+
+11_poisshidim:
+  - fpidx: 01_poisson/21_hindim
+    smrykey: ''
+  - fpidx: 01_poisson/26_hindim
+    smrykey: ''
+
+15_poisshidim:
+  - fpidx: 01_poisson/27_hindim
+    smrykey: ''
+
+16_qpois2d:
+  - fpidx: 01_poisson/28_hindim
+    smrykey: ''
+
+17_maxwell:
+  - fpidx: 03_maxwell/04_mse
+    smrykey: mse
+  - fpidx: 03_maxwell/05_btstrp
+    smrykey: bts
+  - fpidx: 03_maxwell/06_ds
+    smrykey: ds
+
+20_poisson2d:
+  - fpidx: 01_poisson/30_btstrp2d
+    smrykey: bts
+  - fpidx: 01_poisson/31_mse2d
+    smrykey: mse
+  - fpidx: 01_poisson/32_ds2d
+    smrykey: ds
+
+21_smoluchowski:
+  - fpidx: 02_smoll/01_btstrp
+    smrykey: bts
+  - fpidx: 02_smoll/02_mse
+    smrykey: mse
+  - fpidx: 02_smoll/03_lr
+    smrykey: mselr
