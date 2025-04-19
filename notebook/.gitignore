@@ -6,8 +6,6 @@
 08_poisson/
 09_poisson/
 10_smolluchowski/
-11_plotting/*.h5
-13_hdpviz/*.h5
 14_unq
 15_search
 16_poisson
@@ -15,7 +13,8 @@
 20_hdpviz
 temp/
 
-99_scratch.ipynb
+9[0-9]_*.ipynb
 [0-9][0-9]_*.py
 **/*.html
+**/*.h5
 notes.md
