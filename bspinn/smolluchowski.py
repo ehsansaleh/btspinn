@@ -30,6 +30,7 @@
 import numpy as np
 import torch
 import json
+import yaml
 import time
 import shutil
 import socket
@@ -856,9 +857,17 @@ class XSampler:
 # ## JSON Config Loading and Preprocessing
 
 # + tags=["active-ipynb"]
-# json_cfgpath = f'../configs/02_smoll/02_mse.json'
-# with open(json_cfgpath, 'r') as fp:
-#     json_cfgdict = json.load(fp, object_pairs_hook=odict)
+# json_cfgpath = f'../configs/02_smoll/02_mse.yml'
+#
+# if json_cfgpath.endswith('.json'):
+#     with open(json_cfgpath, 'r') as fp:
+#         json_cfgdict = json.load(fp, object_pairs_hook=odict)
+# elif json_cfgpath.endswith('.yml'):
+#     with open(json_cfgpath, "r") as fp:
+#         json_cfgdict = odict(yaml.safe_load(fp))
+# else:
+#     raise RuntimeError(f'unknown config extension: {json_cfgpath}')
+#
 # json_cfgdict['io/config_id'] = '01_test'
 # json_cfgdict['io/results_dir'] = './10_smolluchowski/results'
 # json_cfgdict['io/storage_dir'] = './10_smolluchowski/storage'
@@ -2344,10 +2353,22 @@ if __name__ == '__main__':
     if args_dryrun:
         print('>> Running in dry-run mode', flush=True)
 
-    cfg_path = f'{configs_dir}/{config_tree}/{config_id}.json'
+    cfg_path_ = f'{configs_dir}/{config_tree}/{config_id}'
+    cfg_exts = [cfg_ext for cfg_ext in ['json', 'yml', 'yaml'] if exists(f'{cfg_path_}.{cfg_ext}')]
+    assert len(cfg_exts) < 2, f'found multiple {cfg_exts} extensions for {cfg_path_}'
+    assert len(cfg_exts) > 0, f'found no json or yaml config at {cfg_path_}'
+    cfg_ext = cfg_exts[0]
+    cfg_path = f'{cfg_path_}.{cfg_ext}'
     print(f'>> Reading configuration from {cfg_path}', flush=True)
-    with open(cfg_path) as fp:
-        json_cfgdict = json.load(fp, object_pairs_hook=odict)
+    
+    if cfg_ext.lower() == 'json':
+        with open(cfg_path, 'r') as fp:
+            json_cfgdict = json.load(fp, object_pairs_hook=odict)
+    elif cfg_ext.lower() in ('yml', 'yaml'):
+        with open(cfg_path, 'r') as fp:
+            json_cfgdict = odict(yaml.safe_load(fp))
+    else:
+        raise RuntimeError(f'unknown config extension: {cfg_ext}')
     
     if args_dryrun:
         import tempfile
