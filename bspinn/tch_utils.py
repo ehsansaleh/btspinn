@@ -35,18 +35,165 @@ def isscalar(v):
     else:
         return np.isscalar(v)
 
-def torch_qr_eff(a):
+def torch_qr_eff(a, mode='complete', out=None, gram='classical'):
     """
     Due to a bug in MAGMA, qr on cuda is super slow for small matrices. 
     Therefore, this step must be performed on the cpu.
     
-    See the following:
+    This function aims to provide a temporary relief for using 
+    `torch.linalg.qr` on GPU by implementing a Gram-Schmidt process. 
+    
+    Note: This implementation does not support backward propagation, and 
+          only supports the 'complete' mode.
+    
+    See the following regarding this Bug:
         https://github.com/pytorch/pytorch/issues/22573
         https://github.com/cornellius-gp/gpytorch/pull/1224
+        
+    The input arguments, other than 'gram', follow the PyTorch standard. 
+    See the following for their definition:
+        https://pytorch.org/docs/stable/generated/torch.linalg.qr.html
+        
+    Parameters
+    ----------
+    a: (torch.tensor) the input tensor. Must have a shape of 
+        `(*mb_dims, dim, dim)`, where `mb_dims` shows the batch 
+        dimensions.
+
+    mode: (str) Either `'complete'` or `'reduced'`. This current 
+        implementation only supports the former.
+        
+    out: (None or torch.tensor) The output tensor for the `Q` matrix. 
+        If provided, must have the same shape as `a`.
+        
+    gram: (str) The Gram-Schmidt process variant. 
+    
+        * The `classical` variant makes `O(dim)` calls to CUDA 
+          and can be more efficient. 
+          
+        * The `modified` variant can be slightly more accurate, 
+          but makes CUDA `O(dim^2)` calls and thus is less efficient.
+          
+          See Section 14.2 of "Numerical Linear Algebra with Applications" 
+          by William Ford on the numerical stability of Gram-Schmidt and 
+          its modified variant:
+          
+          https://www.sciencedirect.com/science/article/abs/pii/B9780123944351000144
+          
+        * The `cpu` variant uses Pytorch's routine on CPU.
+          
+        This has to be one of `('classical', 'modified', 'cpu')`.
+        
+    Output
+    ------
+    q: (torch.tensor) The output orthonormal matrix. 
+        This should have a shape of `(*mb_dims, dim, dim)`.
+    
+    r: (torch.tensor) The output upper triangle matrix. 
+        This should have a shape of `(*mb_dims, dim, dim)`.
     """
+
     assert not a.requires_grad
-    q, r = torch.qr(a.detach().cpu(), some=False)
-    return q.to(device=a.device), r.to(device=a.device)
+    
+    if gram == 'cpu':
+        with torch.no_grad():
+            q, r = torch.linalg.qr(a.detach().cpu(), mode=mode, out=out)
+            q_out, r_out = q.to(device=a.device), r.to(device=a.device)
+        return q_out, r_out
+        
+    with torch.no_grad():
+        # First Solution: Performing the QR decomposition on CPU
+        # Issues: 
+        #    1. Pytorch may still only utilize one thread 
+        #       practically even though `torch.get_num_threads()` 
+        #       may be large.
+        #    2. Reliance on CPU resources.
+        
+        
+        ###############################################################
+        ################## Initializing & Identifying #################
+        ###############################################################
+        assert mode == 'complete', 'reduced is not implemented yet'
+        # The bactch dimensions
+        mb_dims = a.shape[:-2]
+        # The input device
+        tch_device = a.device
+        
+        # The Data Type for performing the mathematical caculations
+        # Note: Gram-schmidt is numerically unstable. For this reason, even 
+        # when the input may be float32, we will do everything in float64.
+        tch_dtype = torch.float64
+        
+        # The QR process dimension
+        dim = a.shape[-1]
+        assert a.shape == (*mb_dims, dim, dim)
+
+        if out is None:
+            q = torch.empty(*mb_dims, dim, dim, device=tch_device, dtype=tch_dtype)
+        else:
+            q = out
+        assert q.shape == (*mb_dims, dim, dim)
+        
+        # Casting the `a` input to `tch_dtype` and using it from now on
+        a_f64 = a.to(dtype=tch_dtype)
+        
+        ###############################################################
+        ################### Performing Gram-Schmidt ###################
+        ###############################################################
+        if gram == 'classical':
+            # Performing the classical Gram-Schmidt Process.
+            
+            # Creating a copy of `a` to avoid messing up the original input
+            acp = a_f64.detach().clone()
+            assert acp.shape == (*mb_dims, dim, dim)
+            
+            for k in range(dim):
+                qk_unnorm = acp[..., :, k:k+1]
+                assert qk_unnorm.shape == (*mb_dims, dim, 1)
+
+                qk = qk_unnorm / qk_unnorm.norm(dim=-2, keepdim=True)
+                assert qk.shape == (*mb_dims, dim, 1)
+
+                a_qkcomps = qk.reshape(*mb_dims, 1, dim).matmul(acp)
+                assert a_qkcomps.shape == (*mb_dims, 1, dim)
+
+                # Removing the `qk` components from `a`
+                acp -= qk.matmul(a_qkcomps)
+                assert acp.shape == (*mb_dims, dim, dim)
+
+                q[..., :, k] = qk.reshape(*mb_dims, dim)
+        elif gram == 'modified':
+            # Performing the modified Gram-Schmidt Process.
+            for i in range(dim):
+                q[..., i] = a_f64[..., i]
+                for j in range(i):
+                    err_ij = torch.einsum('...i,...i->...', q[..., j], q[..., i])
+                    assert err_ij.shape == (*mb_dims,)
+                    q[..., i] -=  err_ij.reshape(*mb_dims, 1) * q[..., j]
+                q[..., i] /= q[..., i].norm(dim=-1, keepdim=True)
+        else:
+            raise ValueError(f'Unknown gram={gram}')
+
+        r = q.transpose(-1, -2).matmul(a_f64)
+        assert r.shape == (*mb_dims, dim, dim)
+
+        ###############################################################
+        ##################### Cleanups and Output #####################
+        ###############################################################
+        # Making sure the lower triangle of `r` is absolutely zero!
+        col = torch.arange(dim, device=tch_device, dtype=tch_dtype).reshape(1, dim)
+        assert col.shape == (1, dim)
+
+        row = col.reshape(dim, 1)
+        assert row.shape == (dim, 1)
+        
+        mb_ones = [1] * len(mb_dims)
+        r *= (row <= col).reshape(*mb_ones, dim, dim)
+        
+        # Casting the `q` and `r` outputs to the `a` input dtype for compatibility
+        q_out, r_out = q.to(dtype=a.dtype), r.to(dtype=a.dtype)
+    
+    return q_out, r_out
 
 def profmem():
     """
@@ -59,6 +206,9 @@ def profmem():
     """
     fltr_msg  = "torch.distributed.reduce_op is deprecated, "
     fltr_msg += "please use torch.distributed.ReduceOp instead"
+    warnings.filterwarnings("ignore", message=fltr_msg)
+    fltr_msg  = "`torch.distributed.reduce_op` is deprecated, "
+    fltr_msg += "please use `torch.distributed.ReduceOp` instead"
     warnings.filterwarnings("ignore", message=fltr_msg)
 
     stats = defaultdict(lambda: 0)
@@ -693,3 +843,36 @@ class bcnn2d(nn.Module):
                         b.copy_(u2)
                         
                 h_channels = h_channels_out
+
+if __name__ == '__main__':
+    ###############################################################
+    ################# Unit-testing `torch_qr_eff` #################
+    ###############################################################
+    n_bch = 1000000
+    dim = 10
+    
+    torch.manual_seed(12345)
+    tch_device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    tch_dtype = torch.float64
+    a = torch.randn(n_bch, dim, dim, device=tch_device, dtype=tch_dtype)
+
+    q, r = torch_qr_eff(a, mode='complete', gram='classical')
+
+    rtol = 1e-05
+    atol = 1e-06
+
+    # Test 1: Checking if `q` is orthonormal
+    eye = torch.eye(dim, device=tch_device, dtype=tch_dtype).reshape(1, dim, dim)
+    assert q.transpose(-1, -2).matmul(q).allclose(eye, rtol=rtol, atol=atol)
+
+    # Test 2: Checking if `a == q @ r` holds
+    assert a.allclose(q.matmul(r), rtol=rtol, atol=atol)
+
+    # Test 3: Checking if `r` is upper-triangle
+    col = torch.arange(dim, device=tch_device, dtype=tch_dtype
+        ).reshape(1, 1, dim).expand(n_bch, 1, dim)
+    assert col.shape == (n_bch, 1, dim)
+    row = col.reshape(n_bch, dim, 1)
+    assert row.shape == (n_bch, dim, 1)
+    r_lowtriang = r[row > col]
+    assert r_lowtriang.allclose(torch.zeros_like(r_lowtriang), rtol=rtol, atol=atol)
