@@ -15,7 +15,9 @@ trash
 joblogs
 venv
 venv2
+mamba
 storage
+results
 
 # Created by https://www.gitignore.io/api/macos
 # Edit at https://www.gitignore.io/?templates=macos
