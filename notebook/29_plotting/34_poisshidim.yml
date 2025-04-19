@@ -1,0 +1,231 @@
+figures:
+  2-Dimensional:
+  - name: Standard
+    columns: '*'
+    include: [{dim: 2, trg/btstrp: false, srfpts/dblsmpl: false, srfpts/samp/dstr: rng}]
+  - name: Delayed Target
+    columns: '*'
+    include: [{dim: 2, trg/btstrp: true, trg/w: 0.998, srfpts/n/mdl: 1, srfpts/n/trg: 1},
+              {dim: 2, trg/btstrp: true, trg/w: 0.996, srfpts/n/mdl: 6, srfpts/n/trg: 5},
+              {dim: 2, trg/btstrp: true, trg/w: 0.990, srfpts/n/mdl: 51, srfpts/n/trg: 50}]
+  - name: Double Sampling
+    columns: '*'
+    include: [{dim: 2, srfpts/dblsmpl: true}]
+  - name: Quadrature
+    columns: '*'
+    include: [{dim: 2, srfpts/samp/dstr: quad}]
+  - name: QMC
+    columns: '*'
+    include: [{dim: 2, srfpts/samp/dstr: qmc}]
+  3-Dimensional:
+  - name: Standard
+    columns: '*'
+    include: [{dim: 3, trg/btstrp: false, srfpts/dblsmpl: false, srfpts/samp/dstr: rng}]
+  - name: Delayed Target
+    columns: '*'
+    include: [{dim: 3, trg/btstrp: true, trg/w: 0.998, srfpts/n/mdl: 1, srfpts/n/trg: 1},
+              {dim: 3, trg/btstrp: true, trg/w: 0.996, srfpts/n/mdl: 6, srfpts/n/trg: 5},
+              {dim: 3, trg/btstrp: true, trg/w: 0.990, srfpts/n/mdl: 51, srfpts/n/trg: 50}]
+  - name: Double Sampling
+    columns: '*'
+    include: [{dim: 3, srfpts/dblsmpl: true}]
+  - name: Quadrature
+    columns: '*'
+    include: [{dim: 3, srfpts/samp/dstr: quad}]
+  - name: QMC
+    columns: '*'
+    include: [{dim: 3, srfpts/samp/dstr: qmc}]
+  4-Dimensional:
+  - name: Standard
+    columns: '*'
+    include: [{dim: 4, trg/btstrp: false, srfpts/dblsmpl: false, srfpts/samp/dstr: rng}]
+  - name: Delayed Target
+    columns: '*'
+    include: [{dim: 4, trg/btstrp: true, trg/w: 0.998, srfpts/n/mdl: 1, srfpts/n/trg: 1},
+              {dim: 4, trg/btstrp: true, trg/w: 0.996, srfpts/n/mdl: 6, srfpts/n/trg: 5},
+              {dim: 4, trg/btstrp: true, trg/w: 0.990, srfpts/n/mdl: 51, srfpts/n/trg: 50}]
+  - name: Double Sampling
+    columns: '*'
+    include: [{dim: 4, srfpts/dblsmpl: true}]
+  - name: Quadrature
+    columns: '*'
+    include: [{dim: 4, srfpts/samp/dstr: quad}]
+  - name: QMC
+    columns: '*'
+    include: [{dim: 4, srfpts/samp/dstr: qmc}]
+  5-Dimensional:
+  - name: Standard
+    columns: '*'
+    include: [{dim: 5, trg/btstrp: false, srfpts/dblsmpl: false, srfpts/samp/dstr: rng}]
+  - name: Delayed Target
+    columns: '*'
+    include: [{dim: 5, trg/btstrp: true, trg/w: 0.998, srfpts/n/mdl: 1, srfpts/n/trg: 1},
+              {dim: 5, trg/btstrp: true, trg/w: 0.996, srfpts/n/mdl: 6, srfpts/n/trg: 5},
+              {dim: 5, trg/btstrp: true, trg/w: 0.990, srfpts/n/mdl: 51, srfpts/n/trg: 50}]
+  - name: Double Sampling
+    columns: '*'
+    include: [{dim: 5, srfpts/dblsmpl: true}]
+  - name: Quadrature
+    columns: '*'
+    include: [{dim: 5, srfpts/samp/dstr: quad}]
+  - name: QMC
+    columns: '*'
+    include: [{dim: 5, srfpts/samp/dstr: qmc}]
+  6-Dimensional:
+  - name: Standard
+    columns: '*'
+    include: [{dim: 6, trg/btstrp: false, srfpts/dblsmpl: false, srfpts/samp/dstr: rng}]
+  - name: Delayed Target
+    columns: '*'
+    include: [{dim: 6, trg/btstrp: true, trg/w: 0.998, srfpts/n/mdl: 1, srfpts/n/trg: 1},
+              {dim: 6, trg/btstrp: true, trg/w: 0.996, srfpts/n/mdl: 6, srfpts/n/trg: 5},
+              {dim: 6, trg/btstrp: true, trg/w: 0.990, srfpts/n/mdl: 51, srfpts/n/trg: 50}]
+  - name: Double Sampling
+    columns: '*'
+    include: [{dim: 6, srfpts/dblsmpl: true}]
+  - name: Quadrature
+    columns: '*'
+    include: [{dim: 6, srfpts/samp/dstr: quad}]
+  - name: QMC
+    columns: '*'
+    include: [{dim: 6, srfpts/samp/dstr: qmc}]
+  7-Dimensional:
+  - name: Standard
+    columns: '*'
+    include: [{dim: 7, trg/btstrp: false, srfpts/dblsmpl: false, srfpts/samp/dstr: rng}]
+  - name: Delayed Target
+    columns: '*'
+    include: [{dim: 7, trg/btstrp: true, trg/w: 0.998, srfpts/n/mdl: 1, srfpts/n/trg: 1},
+              {dim: 7, trg/btstrp: true, trg/w: 0.996, srfpts/n/mdl: 6, srfpts/n/trg: 5},
+              {dim: 7, trg/btstrp: true, trg/w: 0.990, srfpts/n/mdl: 51, srfpts/n/trg: 50}]
+  - name: Double Sampling
+    columns: '*'
+    include: [{dim: 7, srfpts/dblsmpl: true}]
+  - name: Quadrature
+    columns: '*'
+    include: [{dim: 7, srfpts/samp/dstr: quad}]
+  - name: QMC
+    columns: '*'
+    include: [{dim: 7, srfpts/samp/dstr: qmc}]
+  8-Dimensional:
+  - name: Standard
+    columns: '*'
+    include: [{dim: 8, trg/btstrp: false, srfpts/dblsmpl: false, srfpts/samp/dstr: rng}]
+  - name: Delayed Target
+    columns: '*'
+    include: [{dim: 8, trg/btstrp: true, trg/w: 0.998, srfpts/n/mdl: 1, srfpts/n/trg: 1},
+              {dim: 8, trg/btstrp: true, trg/w: 0.996, srfpts/n/mdl: 6, srfpts/n/trg: 5},
+              {dim: 8, trg/btstrp: true, trg/w: 0.990, srfpts/n/mdl: 51, srfpts/n/trg: 50}]
+  - name: Double Sampling
+    columns: '*'
+    include: [{dim: 8, srfpts/dblsmpl: true}]
+  - name: Quadrature
+    columns: '*'
+    include: [{dim: 8, srfpts/samp/dstr: quad}]
+  - name: QMC
+    columns: '*'
+    include: [{dim: 8, srfpts/samp/dstr: qmc}]
+  9-Dimensional:
+  - name: Standard
+    columns: '*'
+    include: [{dim: 9, trg/btstrp: false, srfpts/dblsmpl: false, srfpts/samp/dstr: rng}]
+  - name: Delayed Target
+    columns: '*'
+    include: [{dim: 9, trg/btstrp: true, trg/w: 0.998, srfpts/n/mdl: 1, srfpts/n/trg: 1},
+              {dim: 9, trg/btstrp: true, trg/w: 0.996, srfpts/n/mdl: 6, srfpts/n/trg: 5},
+              {dim: 9, trg/btstrp: true, trg/w: 0.990, srfpts/n/mdl: 51, srfpts/n/trg: 50}]
+  - name: Double Sampling
+    columns: '*'
+    include: [{dim: 9, srfpts/dblsmpl: true}]
+  - name: Quadrature
+    columns: '*'
+    include: [{dim: 9, srfpts/samp/dstr: quad}]
+  - name: QMC
+    columns: '*'
+    include: [{dim: 9, srfpts/samp/dstr: qmc}]
+  10-Dimensional:
+  - name: Standard
+    columns: '*'
+    include: [{dim: 10, trg/btstrp: false, srfpts/dblsmpl: false, srfpts/samp/dstr: rng}]
+  - name: Delayed Target
+    columns: '*'
+    include: [{dim: 10, trg/btstrp: true, trg/w: 0.998, srfpts/n/mdl: 1, srfpts/n/trg: 1},
+              {dim: 10, trg/btstrp: true, trg/w: 0.996, srfpts/n/mdl: 6, srfpts/n/trg: 5},
+              {dim: 10, trg/btstrp: true, trg/w: 0.990, srfpts/n/mdl: 51, srfpts/n/trg: 50}]
+  - name: Double Sampling
+    columns: '*'
+    include: [{dim: 10, srfpts/dblsmpl: true}]
+  - name: Quadrature
+    columns: '*'
+    include: [{dim: 10, srfpts/samp/dstr: quad}]
+  - name: QMC
+    columns: '*'
+    include: [{dim: 10, srfpts/samp/dstr: qmc}]
+
+
+aggregate:
+  type: bootstrap
+  n_boot: 20
+  q: [5, 95]
+  stat: mean
+
+drop:
+  columns: [loss/ic]
+
+rename:
+  columns:
+    epoch: Epoch
+    npvm: Integration Variance
+  colrplc:
+    perf: Performance
+    loss: Loss
+    mse: MSE
+    mae: MAE
+    iidur: I.I.D./Uniform Rectangle
+    iidub1: I.I.D./Uniform Ball (R=1)
+    detub1: Deterministic/Uniform Ball (R=1)
+    iidub2: I.I.D./Uniform Ball (R=Sqrt(Dim))
+    detub2: Deterministic/Uniform Ball (R=Sqrt(Dim))
+    iidtv1: I.I.D./Train Volumes 1
+    iidtv4: I.I.D./Train Volumes 4
+    dettv2: Deterministic/Train Volumes 2
+    dettv3: Deterministic/Train Volumes 3
+    dettv5: Deterministic/Train Volumes 5
+    pln: Plain
+    bcn: Normalized
+    bc/: Unbiased/
+    slc: Flattened
+    scn: F-Normalized
+    mdl: Main
+    trg/: Target/
+    total: Total
+    main: Main
+    trgreg: Target Regularization
+    iid: I.I.D.
+    det: Deterministic
+
+plot:
+  xcol: Epoch
+  ycol: Performance/Deterministic/Train Volumes 2/Main/Normalized/MSE
+  huecol: fpidxgrp
+  rngcol: rng_seed
+  frame_width: 480
+  frame_height: 320
+  ncols: 3
+  sharex: true
+  sharey: tab
+  header: The High-Dimensional Poisson Problem
+  fig_title: 'Training Method: {ablname}'
+  colors: ['#001c7f', '#12711c', '#8c0800', '#b1400d', '#591e71', '#592f0d', '#a23582',
+    '#3c3c3c', '#b8850a', '#006374']
+  x_axis_type: linear
+  x_tick_fmt: eng
+  x_tick_lbls: [0, 50000, 100000, 150000, 200000]
+  y_axis_type: log
+  y_tick_fmt:
+  y_tick_lbls:
+  tooltip: [y/mean]
+  menu_width: 150
+  colsep: /
+  color_reset: tab
+

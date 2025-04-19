@@ -1,0 +1,88 @@
+figures:
+  Fixed trg/tau:
+  - name: trg/tau=0.60
+    columns: '*'
+    include: [{trg/tau: 0.60}]
+  - name: trg/tau=0.65
+    columns: '*'
+    include: [{trg/tau: 0.65}]
+  - name: trg/tau=0.70
+    columns: '*'
+    include: [{trg/tau: 0.70}]
+  - name: trg/tau=0.75
+    columns: '*'
+    include: [{trg/tau: 0.75}]
+  - name: trg/tau=0.80
+    columns: '*'
+    include: [{trg/tau: 0.80}]
+  
+  Fixed trg/reg/w:
+  - name: trg/reg/w=16
+    columns: '*'
+    include: [{trg/reg/w: 16}]
+  - name: trg/reg/w=25
+    columns: '*'
+    include: [{trg/reg/w: 25}]
+  - name: trg/reg/w=32
+    columns: '*'
+    include: [{trg/reg/w: 32}]
+  - name: trg/reg/w=64
+    columns: '*'
+    include: [{trg/reg/w: 64}]
+  - name: trg/reg/w=128
+    columns: '*'
+    include: [{trg/reg/w: 128}]
+
+drop:
+  columns: [loss/ic]
+
+rename:
+  columns:
+    epoch: Epoch
+    npvm: Integration Variance
+  colrplc:
+    perf: Performance
+    loss: Loss
+    mse: MSE
+    mae: MAE
+    ur: Uniform Radius
+    ub1: Uniform Ball (R=1)
+    ub2: Uniform Ball (R=Sqrt(Dim))
+    tv/: Train Volumes/
+    pln: Plain
+    bcn: Normalized
+    bc/: Unbiased/
+    slc: Flattened
+    scn: F-Normalized
+    mdl: Main
+    trg/: Target/
+    total: Total
+    main: Main
+    trgreg: Target Regularization
+    iid: I.I.D.
+    det: Deterministic
+
+plot:
+  xcol: Epoch
+  ycol: Performance/Train Volumes/Main/Normalized/MSE
+  huecol: fpidxgrp
+  rngcol: rng_seed
+  frame_width: 480
+  frame_height: 320
+  ncols: 3
+  sharex: true
+  sharey: tab
+  header: The Maxwell-Ampere Problem
+  fig_title: 'Training Method: {ablname}'
+  colors: ['#001c7f', '#12711c', '#8c0800', '#b1400d', '#591e71', '#592f0d', '#a23582',
+    '#3c3c3c', '#b8850a', '#006374']
+  x_axis_type: linear
+  x_tick_fmt: eng
+  x_tick_lbls: [0, 50000, 100000, 150000, 200000]
+  y_axis_type: log
+  y_tick_fmt:
+  y_tick_lbls:
+  tooltip: [y/mean]
+  menu_width: 150
+  colsep: /
+  color_reset: tab

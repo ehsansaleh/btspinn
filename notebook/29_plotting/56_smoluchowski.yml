@@ -1,0 +1,50 @@
+figures:
+  Main:
+  - name: All
+    columns: '*'
+    
+drop:
+  columns:
+  - loss/trgreg
+
+rename:
+  columns:
+    epoch: Epoch
+    loss/ic: Loss (IC)
+    loss/main: Loss (Main)
+    loss/total: Loss (Total)
+    loss/trgreg: Loss (Trgreg)
+    perf/ug1/mdl/mse: MSE to Ground Truth (Grid)
+    perf/ug1/trg/mse: MSE to Ground Truth (Grid, Target)
+    perf/ug2/mdl/mse: MSE to Ground Truth (IID)
+    perf/ug2/trg/mse: MSE to Ground Truth (IID, Target)
+    perf/ug1/mdl/mae: MAE to Ground Truth (Grid)
+    perf/ug1/trg/mae: MAE to Ground Truth (Grid, Target)
+    perf/ug2/mdl/mae: MAE to Ground Truth (IID)
+    perf/ug2/trg/mae: MAE to Ground Truth (IID, Target)
+
+aggregate:
+  type: bootstrap
+  stat: mean
+  n_boot: 20
+  q: [5, 95]
+
+plot:
+  xcol: Epoch
+  ycol: MSE to Ground Truth (IID)
+  huecol: fpidxgrp
+  rngcol: rng_seed
+  frame_width: 350
+  frame_height: 235
+  ncols: 4
+  sharex: true
+  sharey: true
+  header: The Smoluchowski Problem
+  fig_title: 'Ablation: {ablname}'
+  colors: snsdark
+  x_axis_type: linear
+  x_tick_fmt: eng
+  x_tick_lbls: [0, 50000, 100000, 150000, 200000]
+  y_axis_type: log
+  y_tick_fmt: null
+  y_tick_lbls: null

@@ -1,0 +1,81 @@
+figures:
+  Main:
+  - name: All
+    columns: '*'
+
+matplotlib:
+  ycol: Unbiased MSE to Ground Truth
+  figsize: [3.5, 2.8]
+  smry/sel: Unbiased MSE to Ground Truth
+  smry/cri: min
+  colorspec: 
+    blue: '#001c7f'
+    orange: '#b1400d'
+    green: '#12711c'
+    red: '#8c0800'
+    purple: '#591e71'
+    brown: '#592f0d'
+    pink: '#a23582'
+    gray: '#3c3c3c'
+    yellow: '#b8850a'
+    cyan: '#006374'
+    black: '#000000'
+  ax.bar/capsize: 7
+  ax.bar/ecolor: black
+  ax.bar/edgecolor: black
+  ax.bar/linewidth: 2.0
+  ax.bar/log: true
+  ax.bar/width: 0.5
+  arrowprops/arrowstyle: "-|>"
+  ylim: [3e-6, 3e-1]
+
+aggregate:
+  type: bootstrap
+  n_boot: 20
+  q: [5, 95]
+  stat: mean
+
+drop:
+  columns:
+  - perf/ub1/*
+  - perf/ur/*
+  - perf/ub2/*
+  - perf/tv/*
+  - perf/ug/trg/*
+
+rename:
+  columns:
+    epoch: Epoch
+    loss/ic: Loss (IC)
+    loss/main: Loss (Main)
+    loss/total: Loss (Total)
+    loss/trgreg: Loss (Target Regularization)
+    npvm: Integration Variance
+    perf/ug/mdl/pln/mse: Biased MSE to Ground Truth
+    perf/ug/mdl/pln/mae: Biased MAE to Ground Truth
+    perf/ug/mdl/bc/mse: Less Biased MSE to Ground Truth
+    perf/ug/mdl/bc/mae: Less Biased MAE to Ground Truth
+    perf/ug/mdl/slc/mse: Unbiased MSE to Ground Truth
+    perf/ug/mdl/slc/mae: Unbiased MAE to Ground Truth
+    perf/ug/trg/pln/mse: Biased MSE to Ground Truth (Target)
+    perf/ug/trg/pln/mae: Biased MAE to Ground Truth (Target)
+
+plot:
+  xcol: Epoch
+  ycol: Unbiased MSE to Ground Truth/mean
+  huecol: fpidxgrp
+  rngcol: rng_seed
+  frame_width: 350
+  frame_height: 235
+  ncols: 4
+  sharex: true
+  sharey: true
+  header: The Poisson Problem
+  fig_title: 'Ablation: {ablname}'
+  colors: snsdark
+  x_axis_type: linear
+  x_tick_fmt: eng
+  x_tick_lbls: [0, 50000, 100000, 150000, 200000]
+  y_axis_type: log
+  y_tick_fmt: null
+  y_tick_lbls: null

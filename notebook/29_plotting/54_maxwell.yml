@@ -1,0 +1,226 @@
+figures:
+  Standard Training:
+  - name: Number of Target Points
+    columns:
+    - [srfpts/n/trg, vol/n]
+    matplotlib:
+      kind: line
+      xcol: srfpts/n/trg
+      ycol: Unbiased MSE to Ground Truth
+      hue: null
+      elements: null
+
+  - name: Deterministic Sampling
+    columns:
+    - [srfpts/detspc, srfpts/n/trg, vol/n]
+    - [srfpts/detspc]
+    matplotlib:
+      kind: bar
+      xcol: Sampling Scheme
+      elements:
+        $S_{N=1}$:
+          include: [{srfpts/detspc: false}]
+          color: blue
+          annotation: Stochastic (N=1)
+          textpos: [0.2, 0.9]
+          arrowprops/relpos: [0.0, 0.5]
+          arrowprops/connectionstyle: "arc3,rad=0.2"
+        $D_{N=1}$:
+          include: [{srfpts/detspc: true, srfpts/n/trg: 1,    vol/n: 400}]
+          color: red
+          annotation: Det. (N=1)
+          textpos: [0.25, 0.8]
+          arrowprops/relpos: [0.4, 0.0]
+          arrowprops/connectionstyle: "arc3,rad=0.0"
+        $D_{N=10}$:
+          include: [{srfpts/detspc: true, srfpts/n/trg: 10,   vol/n:  80}]
+          color: green
+          annotation: Det. (N=10)
+          textpos: [0.5, 0.7]
+          arrowprops/relpos: [0.3, 0.0]
+          arrowprops/connectionstyle: "arc3,rad=0.0"
+        $D_{N=100}$:
+          include: [{srfpts/detspc: true, srfpts/n/trg: 100,  vol/n:   8}]
+          color: orange
+          annotation: Det. (N=100)
+          textpos: [0.65, 0.6]
+          arrowprops/relpos: [0.6, 0.0]
+          arrowprops/connectionstyle: "arc3,rad=0.0"
+
+  - name: Number of Balls
+    columns:
+    - [vol/n]
+
+  - name: Ball Center Distribution
+    columns:
+    - [vol/c/c, vol/c/dstr, vol/c/high, vol/c/low, vol/c/r]
+    - [vol/c/c, vol/c/dstr, vol/c/loc, vol/c/r, vol/c/scale]
+  - name: Ball Radius Distribution
+    columns:
+    - [vol/r/high]
+    - [vol/r/dstr]
+    - [vol/r/dstr, vol/r/high, vol/r/low]
+
+  - name: MLP Width
+    columns:
+    - [nn/width]
+  - name: MLP Depth
+    columns:
+    - [nn/hidden]
+  - name: MLP Activation
+    columns:
+    - [nn/act]
+
+  - name: Learning Rate
+    columns:
+    - [opt/lr]
+
+  Bootstrapping:
+  - name: Number of Balls
+    columns:
+    - [vol/n]
+
+  - name: Ball Center Distribution
+    columns:
+    - [vol/c/c, vol/c/dstr, vol/c/high, vol/c/low, vol/c/r]
+    - [vol/c/c, vol/c/dstr, vol/c/loc, vol/c/r, vol/c/scale]
+
+  - name: Ball Radius Distribution
+    columns:
+    - [vol/r/high]
+    - [vol/r/dstr]
+    - [vol/r/dstr, vol/r/high, vol/r/low]
+
+  - name: MLP Depth
+    columns:
+    - [nn/hidden]
+  - name: MLP Activation
+    columns:
+    - [nn/act]
+  - name: MLP Width
+    columns:
+    - [nn/width]
+
+  - name: Target Smoothing
+    columns:
+    - [trg/tau]
+    # exclude: [trg/tau: 0.9999]
+  - name: Target Regularization
+    columns:
+    - [trg/reg/w]
+    # exclude: [trg/reg/w: 0.1]
+  - name: Target Weight
+    columns:
+    - [trg/w]
+
+  - name: Deterministic Sampling
+    columns:
+    - [srfpts/detspc]
+    exclude: [{}]
+
+  - name: Learning Rate
+    columns:
+    - [opt/lr]
+    exclude: [opt/lr: 0.005]
+
+
+  Double Sampling:
+  - name: Target Points
+    columns:
+    - [srfpts/n/trg, vol/n]
+    # exclude:
+    # - {vol/n: 400, srfpts/n/trg: 2}
+    # - {vol/n: 80, srfpts/n/trg: 10}
+
+  - name: Number of Balls
+    columns:
+    - [vol/n]
+    # exclude: [{vol/n: 32}, {vol/n: 8}, {vol/n: 4}, {vol/n: 2}, {vol/n: 1}]
+
+  - name: Deterministic Sampling
+    columns:
+    - [srfpts/detspc, srfpts/n/trg, vol/n]
+    - [srfpts/detspc]
+    exclude:
+    - {vol/n: 400, srfpts/n/trg: 2,  srfpts/detspc: true}
+    - {vol/n:  80, srfpts/n/trg: 10, srfpts/detspc: true}
+  
+  - name: Ball Center Distribution
+    columns:
+    - [vol/c/c, vol/c/dstr, vol/c/high, vol/c/low, vol/c/r]
+    - [vol/c/c, vol/c/dstr, vol/c/loc, vol/c/r, vol/c/scale]
+
+  - name: Ball Radius Distribution
+    columns:
+    - [vol/r/high]
+    - [vol/r/dstr]
+    - [vol/r/dstr, vol/r/high, vol/r/low]
+
+  - name: MLP Depth
+    columns:
+    - [nn/hidden]
+  - name: MLP Activation
+    columns:
+    - [nn/act]
+  - name: MLP Width
+    columns:
+    - [nn/width]
+  
+  - name: Learning Rate
+    columns:
+    - [opt/lr]
+    exclude: [opt/lr: 0.005]
+
+drop:
+  columns: [loss/ic]
+
+rename:
+  columns:
+    epoch: Epoch
+    npvm: Integration Variance
+  colrplc:
+    perf: Performance
+    loss: Loss
+    mse: MSE
+    mae: MAE
+    ur: Uniform Radius
+    ub1: Uniform Ball (R=1)
+    ub2: Uniform Ball (R=Sqrt(Dim))
+    tv/: Train Volumes/
+    pln: Plain
+    bcn: Normalized
+    bc/: Unbiased/
+    slc: Flattened
+    scn: F-Normalized
+    mdl: Main
+    trg/: Target/
+    total: Total
+    main: Main
+    trgreg: Target Regularization
+    iid: I.I.D.
+    det: Deterministic
+
+plot:
+  xcol: Epoch
+  ycol: Performance/Train Volumes/Main/Unbiased/MSE
+  huecol: fpidxgrp
+  rngcol: rng_seed
+  frame_width: 380
+  frame_height: 280
+  ncols: 4
+  sharex: true
+  sharey: tab
+  header: The Maxwell-Ampere Problem
+  fig_title: 'Training Method: {ablname}'
+  colors: ['#001c7f', '#12711c', '#8c0800', '#b1400d', '#591e71', '#592f0d', '#a23582',
+    '#3c3c3c', '#b8850a', '#006374']
+  x_axis_type: linear
+  x_tick_fmt: eng
+  x_tick_lbls: [0, 50000, 100000, 150000, 200000]
+  y_axis_type: log
+  y_tick_fmt:
+  y_tick_lbls:
+  tooltip: [y/mean]
+  menu_width: 150
+  colsep: /
+  color_reset: tab
