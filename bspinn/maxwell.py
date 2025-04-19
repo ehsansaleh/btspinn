@@ -3,7 +3,7 @@
 #   jupytext:
 #     text_representation:
 #       extension: .py
-#       format_name: percent
+#       format_name: hydrogen
 #       format_version: '1.3'
 #       jupytext_version: 1.14.4
 #   kernelspec:
@@ -28,7 +28,9 @@
 # %%
 import numpy as np
 import torch
+import os
 import json
+import yaml
 import time
 import shutil
 import socket
@@ -40,7 +42,8 @@ import resource
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
+from tensorboardX import SummaryWriter
 import psutil
 from pyinstrument import Profiler
 from torch import nn
@@ -1295,7 +1298,6 @@ def plot_sol(x1_msh_np, x2_msh_np, sol_dict, fig=None, ax=None, cax=None):
             e_msh_capped[:, :, 0], e_msh_capped[:, :, 1])
     return fig, ax, cax
 
-
 def get_perfdict(e_pnts, e_mdlsol, e_prbsol):
     """
     Computes the biased, bias-corrected, and slope-corrected error 
@@ -1349,14 +1351,14 @@ def get_perfdict(e_pnts, e_mdlsol, e_prbsol):
         assert err_pln.shape == (n_seeds, n_evlpnts, dim)
         
         # The bias-corrected error matrix
-        e_mdlsol2 = e_mdlsol - e_mdlsol.mean(dim=1, keepdims=True)
+        e_mdlsol2 = e_mdlsol - e_mdlsol.mean(dim=1, keepdim=True)
         assert e_mdlsol2.shape == (n_seeds, n_evlpnts, dim)
-        e_prbsol2 = e_prbsol - e_prbsol.mean(dim=1, keepdims=True)
+        e_prbsol2 = e_prbsol - e_prbsol.mean(dim=1, keepdim=True)
         assert e_prbsol2.shape == (n_seeds, n_evlpnts, dim)
         err_bc = e_mdlsol2 - e_prbsol2
         assert err_bc.shape == (n_seeds, n_evlpnts, dim)
         
-        # The normalized error matrix
+        # The normalized error matrix by std of all dimensions
         e_mdlsol3 = e_mdlsol2.reshape(n_seeds, n_evlpnts*dim)
         assert e_mdlsol3.shape == (n_seeds, n_evlpnts*dim)
         
@@ -1371,6 +1373,16 @@ def get_perfdict(e_pnts, e_mdlsol, e_prbsol):
         
         err_scn = e_mdlsol4 - e_prbsol4
         assert err_scn.shape == (n_seeds, n_evlpnts*dim)
+        
+        # The normalized error matrix individually for each dim
+        e_mdlsol5 = e_mdlsol2 / e_mdlsol2.square().mean(dim=1, keepdim=True).sqrt()
+        assert e_mdlsol5.shape == (n_seeds, n_evlpnts, dim)
+        
+        e_prbsol5 = e_prbsol2 / e_prbsol2.square().mean(dim=1, keepdim=True).sqrt()
+        assert e_prbsol5.shape == (n_seeds, n_evlpnts, dim)
+        
+        err_bcn = e_mdlsol5 - e_prbsol5
+        assert err_bcn.shape == (n_seeds, n_evlpnts, dim)
         
         # Computing the mse and mae values
         e_plnmse = err_pln.square().sum(dim=-1).mean(dim=-1)
@@ -1387,11 +1399,18 @@ def get_perfdict(e_pnts, e_mdlsol, e_prbsol):
         assert e_scnmse.shape == (n_seeds,)
         e_scnmae = err_scn.abs().mean(dim=-1)
         assert e_scnmse.shape == (n_seeds,)
+        
+        e_bcnmse = err_bcn.square().mean(dim=[-1, -2])
+        assert e_bcnmse.shape == (n_seeds,)
+        e_bcnmae = err_bcn.abs().mean(dim=[-1, -2])
+        assert e_bcnmse.shape == (n_seeds,)
     
         outdict = {'pln/mse': e_plnmse.detach().cpu().numpy(),
                    'pln/mae': e_plnmae.detach().cpu().numpy(),
                    'bc/mse': e_bcmse.detach().cpu().numpy(),
                    'bc/mae': e_bcmae.detach().cpu().numpy(),
+                   'bcn/mse': e_bcnmse.detach().cpu().numpy(),
+                   'bcn/mae': e_bcnmae.detach().cpu().numpy(),
                    'scn/mse': e_scnmse.detach().cpu().numpy(),
                    'scn/mae': e_scnmae.detach().cpu().numpy()}
     
@@ -1765,12 +1784,19 @@ def chck_dstrargs(opt, cfgdict, dstr2args, opt2req, parnt_optdstr=None):
 # ## JSON Config Loading and Preprocessing
 
 # %% code_folding=[1] tags=["active-ipynb"]
-# json_cfgpath = f'../configs/00_scratch/08_maxwell.json'
-# # ! rm -rf "./18_maxwell/results/08_maxwell.h5"
-# # ! rm -rf "./18_maxwell/storage/08_maxwell"
-# with open(json_cfgpath, 'r') as fp:
-#     json_cfgdict = json.load(fp, object_pairs_hook=odict)
-# json_cfgdict['io/config_id'] = '08_maxwell'
+# json_cfgpath = f'../configs/03_maxwell/04_rect.json'
+# # ! rm -rf "./18_maxwell/results/04_rect.h5"
+# # ! rm -rf "./18_maxwell/storage/04_rect"
+# if json_cfgpath.endswith('.json'):
+#     with open(json_cfgpath, 'r') as fp:
+#         json_cfgdict = json.load(fp, object_pairs_hook=odict)
+# elif json_cfgpath.endswith('.yml'):
+#     with open(json_cfgpath, "r") as fp:
+#         json_cfgdict = odict(yaml.safe_load(fp))
+# else:
+#     raise RuntimeError(f'unknown config extension: {json_cfgpath}')
+#
+# json_cfgdict['io/config_id'] = '04_rect'
 # json_cfgdict['io/results_dir'] = './18_maxwell/results'
 # json_cfgdict['io/storage_dir'] = './18_maxwell/storage'
 # json_cfgdict['io/tch/device'] = 'cuda:0'
@@ -3701,10 +3727,22 @@ if __name__ == '__main__':
     if args_dryrun:
         print('>> Running in dry-run mode', flush=True)
 
-    cfg_path = f'{configs_dir}/{config_tree}/{config_id}.json'
+    cfg_path_ = f'{configs_dir}/{config_tree}/{config_id}'
+    cfg_exts = [cfg_ext for cfg_ext in ['json', 'yml', 'yaml'] if exists(f'{cfg_path_}.{cfg_ext}')]
+    assert len(cfg_exts) < 2, f'found multiple {cfg_exts} extensions for {cfg_path_}'
+    assert len(cfg_exts) > 0, f'found no json or yaml config at {cfg_path_}'
+    cfg_ext = cfg_exts[0]
+    cfg_path = f'{cfg_path_}.{cfg_ext}'
     print(f'>> Reading configuration from {cfg_path}', flush=True)
-    with open(cfg_path) as fp:
-        json_cfgdict = json.load(fp, object_pairs_hook=odict)
+    
+    if cfg_ext.lower() == 'json':
+        with open(cfg_path, 'r') as fp:
+            json_cfgdict = json.load(fp, object_pairs_hook=odict)
+    elif cfg_ext.lower() in ('yml', 'yaml'):
+        with open(cfg_path, 'r') as fp:
+            json_cfgdict = odict(yaml.safe_load(fp))
+    else:
+        raise RuntimeError(f'unknown config extension: {cfg_ext}')
     
     if args_dryrun:
         import tempfile
