@@ -1,0 +1,371 @@
+# An optional description of this config.
+desc: Example Maxewll-Ampere equation applied to a closed rectangular current circuit.
+# Date of the experimentation. This is optional and will not be used in training or summarization.
+date: May 1, 2022
+
+# The random number generator's list of seeds:
+#   1. The range of values must be specified in a pythonic manner: [start, stop, step]
+#   2. The number of models trained in parallel is determined by this option; this option
+#      determines the number of completely independent models trained in parallel.
+#   3. You can specify the list of seeds manually using the alternative `rng_seed/list` key.
+rng_seed/range: [0, 100000, 1000]
+# The type of problem. This is mainly used to make sure the correct script is running this config.
+problem: maxwell
+# The dimensionality of the problem
+dim: 3
+
+###################################################################################################
+################################ The Optimization Hyper-parameters ################################
+###################################################################################################
+# The optimizer's type. Available options are 'adam' and 'sgd'.
+opt/dstr: adam
+# The optimizer's learning rate.
+opt/lr/list: [0.001, 0.002, 0.005, 0.0005, 0.0002, 0.0001]
+# The number of optimization iterations. 
+# This is the same as the number of `.step()` calls to the optimizer. 
+opt/epoch: 200000
+
+###################################################################################################
+########################## Key Surface Point and Volume Sampling Options ##########################
+###################################################################################################
+# The number of training volumes (balls) in each training epoch. In other words, this 
+# corresponds to the mini-batch size for the SGD optimizer. 
+vol/n/list: [400, 256, 128, 64, 32, 16, 8, 4, 2, 1]
+# The number of surface points evaluated by the main model.
+srfpts/n/mdl: 1
+# The number of surface points evaluated by the target model.
+srfpts/n/trg: 1
+# Whether to deterministically space the sampled surface points or not.
+srfpts/detspc/list: [false, true]
+# Whether to use the double-sampling trick for constructing the training loss.
+srfpts/dblsmpl: false
+# Whether to use the delayed target method or not.
+trg/btstrp: true
+# The target smoothing factor in the delayed target method. 
+# This corresponds to the $\tau$ hyper-parameter in Algorithm 1 of the main paper.
+trg/tau/list: [0.75, 0.5, 0.875, 0.9375, 0.96875]
+# The target regularization weight in the delayed target method. 
+# This corresponds to the $\lambda$ hyper-parameter in Algorithm 1 of the main paper.
+trg/reg/w/list: [64.0, 32.0, 16.0, 128.0, 256.0]
+# The target weight in the delayed target method. 
+# This determines the `M` hyper-parameter in Equation 5 of the main paper; The target weight is 
+# essentially the same as $(M-1)/M$.
+trg/w/list: [0.999, 0.99, 0.9, 0.9999]
+
+###################################################################################################
+########################### The Function Approximation Hyper-parameters ###########################
+###################################################################################################
+# The type of neural network. The only available option is `mlp`.
+nn/dstr: mlp
+# The width of the neural network; this is the number of neural units in each layer.
+nn/width/list: [64, 32, 128]
+# The number of hidden layers in the neural network.
+nn/hidden/list: [4, 3, 2, 1]
+# The activation function of the network. The available values are `['silu', 'tanh', 'relu']`.
+nn/act/list: [tanh, silu, relu]
+
+###################################################################################################
+################################ The Current Density Specifications ###############################
+###################################################################################################
+# This section defines the Maxwell-Ampere current density. Note that these are problem-defining 
+# hyper-parameters, as opposed to optimization or solver-related hyper-parameters.
+
+# The current density type. The only available option is `dmm` (i.e., "Delta Mixture Model").
+wire/dstr: dmm
+# The number of linear wire segments for the current density.
+wire/n: 4
+# The current density weight.
+wire/w: [1.0]
+# The source points of the current density; these points define the starting point of the current. 
+# To define a closed circuit, the source of each segment should be placed on the sinking point of 
+# the previous wire segment.
+wire/src:
+- [0.57735, -0.57735, -0.57735]
+- [0.57735, 0.57735, 0.57735]
+- [-0.57735, 0.57735, 0.57735]
+- [-0.57735, -0.57735, -0.57735]
+# The sinking points of the current density; these points define the ending point of the current. 
+# To define a closed circuit, the source of each segment should be placed on the sinking point of 
+# the previous wire segment.
+wire/snk:
+- [0.57735, 0.57735, 0.57735]
+- [-0.57735, 0.57735, 0.57735]
+- [-0.57735, -0.57735, -0.57735]
+- [0.57735, -0.57735, -0.57735]
+
+###################################################################################################
+######################## The Training Integration Volume Hyper-Parameters #########################
+###################################################################################################
+# The type of the training volumes. The only available option is 'disk'.
+vol/dstr: disk
+# The sampling distribution for the normal vector:
+#   1. `uball` denotes sampling uniformly from the unit ball.
+vol/nv/dstr: uball
+
+###########################################################
+# Ablating the Disk Center Distribution Hyper-Parameters ##
+###########################################################
+# The next groups define a few ways of specifying the sampling distribution of the disk centers. 
+# Each group will be tested out one at a time and compared in the supplementary ablation studies.
+
+#############################
+### Uniform Ball Centers ####
+#############################
+# Group 1: Placing the disk centers stochastically and uniformly. The disk centers will be placed 
+# in an IID manner, and uniformly in a unit ball centered at [0.0] with a radius of 1.
+
+# The training volume center distribution:
+#   1. `ball` means that the training volume centers will be sampled in an IID and uniform manner 
+#       within a ball.
+#   2. `uniform` means the training volume centers are sampled uniformly within a cube.
+#   3. `normal` means the training volume centers are sampled from a normal distribution.
+g01/vol/c/dstr: ball
+# The hyper-center of the uniform ball used for uniformly sampling the training volume centers.
+g01/vol/c/c: [0.0]
+# The hyper-radius of the uniform ball used for uniformly sampling the training volume centers.
+g01/vol/c/r: 1.0
+
+#############################
+### Uniform Cube Centers ####
+#############################
+# Group 2: Placing the disk centers stochastically and uniformly. The disk centers will be placed 
+# in an IID manner, and uniformly in a square spanning from the lower left corner of [-1] to 
+# the upper right corner of [1].
+
+# The training volume center distribution:
+#   1. `ball` means that the training volume centers will be sampled in an IID and uniform manner 
+#       within a ball.
+#   2. `uniform` means the training volume centers are sampled uniformly within a cube.
+#   3. `normal` means the training volume centers are sampled from a normal distribution.
+g02/vol/c/dstr: uniform
+# The lower-left corner of the cube used for uniformly sampling the training volume centers.
+g02/vol/c/low: [-1.0]
+# The top-right corner of the cube used for uniformly sampling the training volume centers.
+g02/vol/c/high: [1.0]
+
+#############################
+###### Normal Centers #######
+#############################
+# Group 3: Placing the disk centers stochastically and normally. The disk centers will be placed 
+# in an IID manner, following a normal distribution.
+
+# The training volume center distribution:
+#   1. `ball` means that the training volume centers will be sampled in an IID and uniform manner 
+#       within a ball.
+#   2. `uniform` means the training volume centers are sampled uniformly within a cube.
+#   3. `normal` means the training volume centers are sampled from a normal distribution.
+g03/vol/c/dstr: normal
+# The mean of the normal distribution used for sampling the training volume centers.
+g03/vol/c/loc: [0.0]
+# The scale of the normal distribution used for sampling the training volume centers.
+g03/vol/c/scale: 1.0
+
+###########################################################
+# Ablating the Ball Radius Distribution Hyper-Parameters ##
+###########################################################
+# The next groups define a few ways of specifying the sampling distribution of the training volume
+# radii. Each group will be tested out one at a time and compared in the supplementary ablations.
+
+#############################
+## Uniform Radii-Squared 1 ##
+#############################
+# Group 4: Choosing the square of the ball radii stochastically and uniformly. The squared ball 
+# radii will be sampled in an IID manner over the `[0.0, 1.0]` interval.
+
+# The training volume radius distribution:
+#   1. `uniform` makes the radii themselves sampled uniformly from a 1-d interval.
+#   2. `unifdpow` samples the radii such that their `d`-th power is distributed uniformly, where 
+#      `d` is the problem space dimension.
+g04/vol/r/dstr: unifdpow
+# The lower end of the sampled radii for the training volumes.
+g04/vol/r/low: 0.0
+# The higher end of the sampled radii for the training volumes.
+g04/vol/r/high: 1.0
+
+#############################
+###### Uniform Radii 1 ######
+#############################
+# Group 5: Choosing the ball radii stochastically and uniformly. The ball radii will be sampled in 
+# an IID manner over the `[0.1, 1.5]` interval.
+
+# The training volume radius distribution:
+#   1. `uniform` makes the radii themselves sampled uniformly from a 1-d interval.
+#   2. `unifdpow` samples the radii such that their `d`-th power is distributed uniformly, where 
+#      `d` is the problem space dimension.
+g05/vol/r/dstr: uniform
+# The lower end of the sampled radii for the training volumes.
+g05/vol/r/low: 0.1
+# The higher end of the sampled radii for the training volumes.
+g05/vol/r/high: 1.5
+
+#############################
+###### Uniform Radii 2 ######
+#############################
+# Group 6: Choosing the ball radii stochastically and uniformly. The ball radii will be sampled in 
+# an IID manner over the `[0.0, 1.0]` interval.
+
+# The training volume radius distribution:
+#   1. `uniform` makes the radii themselves sampled uniformly from a 1-d interval.
+#   2. `unifdpow` samples the radii such that their `d`-th power is distributed uniformly, where 
+#      `d` is the problem space dimension.
+g06/vol/r/dstr: uniform
+# The lower end of the sampled radii for the training volumes.
+g06/vol/r/low: 0.0
+# The higher end of the sampled radii for the training volumes.
+g06/vol/r/high: 1.0
+
+#############################
+## Uniform Radii-Squared 2 ##
+#############################
+# Group 7: Choosing the square of the ball radii stochastically and uniformly. The squared ball 
+# radii will be sampled in an IID manner over the `[0.0, sqrt(3)]` interval.
+
+# The training volume radius distribution:
+#   1. `uniform` makes the radii themselves sampled uniformly from a 1-d interval.
+#   2. `unifdpow` samples the radii such that their `d`-th power is distributed uniformly, where 
+#      `d` is the problem space dimension.
+g07/vol/r/dstr: unifdpow
+# The lower end of the sampled radii for the training volumes.
+g07/vol/r/low: 0.0
+# The higher end of the sampled radii for the training volumes.
+g07/vol/r/high: sqrt(dim)
+
+#############################
+## Uniform Radii-Squared 3 ##
+#############################
+# Group 8: Choosing the square of the ball radii stochastically and uniformly. The squared ball 
+# radii will be sampled in an IID manner over the `[0.0, sqrt(4)]` interval.
+
+# The training volume radius distribution:
+#   1. `uniform` makes the radii themselves sampled uniformly from a 1-d interval.
+#   2. `unifdpow` samples the radii such that their `d`-th power is distributed uniformly, where 
+#      `d` is the problem space dimension.
+g08/vol/r/dstr: unifdpow
+# The lower end of the sampled radii for the training volumes.
+g08/vol/r/low: 0.0
+# The higher end of the sampled radii for the training volumes.
+g08/vol/r/high: sqrt(dim+1)
+
+###################################################################################################
+############################## The Evaluation Distribution Profiles ###############################
+###################################################################################################
+
+###########################################################
+####### The "Uniform Rectangle" Evaluation Profile ########
+###########################################################
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle in an iid manner.
+#   2. `ball` dentoes sampling uniformly from a ball in an iid manner.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes.
+#   4. `grid` dentoes sampling uniformly a rectangle in deterministic manner.
+eval/ur/dstr: uniform
+# The lower-left corner of the rectangle for sampling the evaluation points uniformly.
+eval/ur/low: [-1.0]
+# The top-right corner of the rectangle for sampling the evaluation points uniformly.
+eval/ur/high: [1.0]
+# The size of the evaluation points set.
+eval/ur/n: 25000
+# The frequency of evaluation in epochs.
+eval/ur/frq: 1000
+
+###########################################################
+######### The "Uniform Ball 1" Evaluation Profile #########
+###########################################################
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle in an iid manner.
+#   2. `ball` dentoes sampling uniformly from a ball in an iid manner.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes.
+#   4. `grid` dentoes sampling uniformly a rectangle in deterministic manner.
+eval/ub1/dstr: ball
+# The center of the ball for sampling the evaluation points uniformly.
+eval/ub1/c: [0.0]
+# The radius of the ball for sampling the evaluation points uniformly.
+eval/ub1/r: 1.0
+# The size of the evaluation points set.
+eval/ub1/n: 25000
+# The frequency of evaluation in epochs.
+eval/ub1/frq: 1000
+
+###########################################################
+######### The "Uniform Ball 2" Evaluation Profile #########
+###########################################################
+
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle in an iid manner.
+#   2. `ball` dentoes sampling uniformly from a ball in an iid manner.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes.
+#   4. `grid` dentoes sampling uniformly a rectangle in deterministic manner.
+eval/ub2/dstr: ball
+# The center of the ball for sampling the evaluation points uniformly.
+eval/ub2/c: [0.0]
+# The radius of the ball for sampling the evaluation points uniformly.
+eval/ub2/r: sqrt(dim)
+# The size of the evaluation points set.
+eval/ub2/n: 25000
+# The frequency of evaluation in epochs.
+eval/ub2/frq: 1000
+
+###########################################################
+######## The "Training Volume" Evaluation Profile #########
+###########################################################
+
+# The evaluation points distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle in an iid manner.
+#   2. `ball` dentoes sampling uniformly from a ball in an iid manner.
+#   3. `trnvol` dentoes sampling uniformly from within the training volumes.
+#   4. `grid` dentoes sampling uniformly a rectangle in deterministic manner.
+eval/tv/dstr: trnvol
+# The size of the evaluation points set.
+eval/tv/n: 250000
+# The frequency of evaluation in epochs.
+eval/tv/frq: 1000
+
+###################################################################################################
+################################# The I/O Logistics and Settings ##################################
+###################################################################################################
+# The statistics averaging frequency. A value of 100 means that the training statistics are 
+# averaged every 100 steps before being stored in the disk.
+io/avg/frq: 100
+# The model parameters checkpointing frequency. A value of 2500 means that a snapshot of the neural 
+# models are stored every 2500 steps.
+io/ckpt/frq: 2500
+# The resource monitoring frequency. A value of 1000 means that a snapshot of the resource utilization  
+# of the system (e.g., the CPU, RAM, GPU utilization) is evaluated and stored every 2500 steps.
+io/mon/frq: 1000
+# The floating point data type used in PyTorch. All floating point tensors and parameters (e.g., 
+# the trained models) will be using this data type.
+io/tch/dtype: float32
+# The GZip compression level of the stored HDF files. 
+io/cmprssn_lvl: 0
+# The evaluation mini-batch size. This is different from the training mini-batch size, and it is 
+# only used inside the evaluation protocol. Since the evaluation sample set may be larger than it 
+# can fit the device memory, this mini-batch size will be used to split the evaluations into 
+# manageable chunks. This setting should have no impact on the computed values. Since this option 
+# can impact the performance of the algorithm, try and set it to the highest value that would not 
+# result in an out of memory error. 
+io/eval/bs: 256
+# The flushing frequency of the collected results into the disk.
+#   1. A value of 0 means that the entire results (e.g., the training and evaluation 
+#      statistics and model checkpoints) are written once at the end of the training. 
+#   2. A value of 100000 means that the the results are flushed every 100000 epochs to the disk.
+io/flush/frq: 0
+
+###################################################################################################
+################################# The Looping Tree Specification ##################################
+###################################################################################################
+# This config file defines multiple training configurations, and the looping tree defines how 
+# these configurations are derived from the provided values above.
+
+# This specific file is defining an One Variable at a Time (OVAT) sweep of the hyper-parameter 
+# groups. In OVAT-style experiments, each hyper-parameter is ablated individually while fixing 
+# the other hyper-parameters fixed; the other HPs are fixed at their first value, while the current 
+# HP values are sweeped over.
+
+# The looping tree specification
+looping/lines:
+  - 'ovat(aslist("rng_seed"),                                       '
+  - '     cat("g01/*", "g02/*", "g03/*").lstrip(                    '
+  - '          "g01/",  "g02/",  "g03/"),                           '
+  - '     cat("g04/*", "g05/*", "g06/*", "g07/*", "g08/*").lstrip(  '
+  - '         "g04/",  "g05/",  "g06/",  "g07/",  "g08/" ),         '
+  - '     "rest")                                                   '
