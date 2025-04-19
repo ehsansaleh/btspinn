@@ -1,16 +1,15 @@
 # ---
 # jupyter:
 #   jupytext:
-#     formats: ipynb,py:hydrogen
 #     text_representation:
 #       extension: .py
 #       format_name: hydrogen
 #       format_version: '1.3'
 #       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: venv
+#     display_name: bspinn
 #     language: python
-#     name: python3
+#     name: bspinn
 # ---
 
 # %% [markdown]
@@ -34,10 +33,13 @@
 import numpy as np
 import torch
 import json
+import yaml
+import os
 import time
 import shutil
 import socket
 import random
+import chaospy
 import pathlib
 import fnmatch
 import datetime
@@ -147,6 +149,60 @@ from bspinn.io_cfg import storage_dir
 # $$=\frac{1}{d+1} \cdot \frac{1}{r_b^d} \frac{r_h^{d+1} - r_l^{d+1}}{r_h - r_l}.$$
 #
 # By setting $r_h=r_b$ and $r_l < r_h$, the above value closes in on $$\frac{1}{d+1}$$.
+
+# %% [markdown]
+# #### Spherical Coordinates
+#
+# The spherical coordinate system in $d$ dimensions is relates $[x_1, \cdots, x_d]$ to $[r, \phi_1, \phi_2, \cdots, \phi_{d-1}]$ such that
+#
+# $$x_1 = r \cos(\phi_1),$$
+# $$x_2 = r \sin(\phi_1)\cos(\phi_2),$$
+# $$x_2 = r \sin(\phi_1)\sin(\phi_2)\cos(\phi_3),$$
+# $$\ldots$$
+# $$x_{d-1} = r \sin(\phi_1)\sin(\phi_2)\cdots \cos(\phi_{d-1}),$$
+# $$x_d = r \sin(\phi_1)\sin(\phi_2)\cdots \sin(\phi_{d-1}).$$
+#
+# We also have 
+# $$\phi_1, \cdots, \phi_{d-2} \in [0, \pi],$$ 
+# $$\phi_{d-1} \in [0, 2\pi).$$
+#
+# The Jacobian determinent is therefore
+#
+# $$\det([\frac{\partial x_i}{\partial(r, \phi_j)}]_{i,j}) = r^{d-1} \sin^{d-2}(\phi_1) \sin^{d-3}(\phi_2) \cdots \sin(\phi_{d-2}).$$
+#
+# In other words, we have
+#
+# $$ \text{d}^{d}(V) = r^{d-1} \sin^{d-2}(\phi_1) \sin^{d-3}(\phi_2) \cdots \sin(\phi_{d-2}) \text{d}r \text{d}\phi_1 \cdots \text{d} \phi_{d-1}.$$
+#
+#
+# #### Uniform Sphere Sampling
+# Define $F_n$ such that 
+#
+# $$F_n(u) = \frac{1}{\int_{0}^{\pi} \sin^{n}(\phi) \text{d}{\phi}} \int_{0}^{\pi u} \sin^{n}(\phi) \text{d}{\phi}.$$
+#
+# Note that $F_n(0) = 0$ and $F_n(1)=1$, and that $F_n$ is basically a CDF for a $\sin^{n}$-like PDF.
+#
+# To sample points uniformly from the sphere of the $d$-dimensional unit ball, here is one process:
+#
+# 1. Sample $u = [u_1, u_2, \cdots, u_{d-1}]$ uniformly from $[0, 1]^{d-1}$.
+#
+# 2. Construct an inverse map for $F_n$ where $1 \leq n \leq {d-2}$. This can be done using a lookup table and `torch.searchsorted` for instance.
+#
+# 3. Compute the following:
+#
+# $$\phi_1 = \pi \cdot F_{d-2}^{-1}(u_1),$$
+# $$\phi_2 = \pi \cdot F_{d-3}^{-1}(u_2),$$
+# $$\ldots$$
+# $$\phi_{d-2} = \pi \cdot F_{1}^{-1}(u_{d-2}),$$
+# $$\phi_{d-1} = 2 \pi \cdot u_{d-1}.$$
+#
+# 4. Translate $[r, \phi_1, \phi_2, \cdots, \phi_{d-1}]$ to the cartesian system $[x_1, \cdots, x_d]$.
+#
+# Resources: 
+#
+# 1. https://en.wikipedia.org/wiki/N-sphere
+#
+# 2. http://corysimon.github.io/articles/uniformdistn-on-sphere/
 
 # %% [markdown]
 # ### Defining the Problem and the Analytical Solution
@@ -408,6 +464,146 @@ class BallSampler:
 # %% [markdown]
 # ### Sruface Sampling
 
+# %%
+class Cube2Sphere:
+    def __init__(self, n_cdfint, dim, tch_device, tch_dtype):
+        self.n_cdfint = n_cdfint
+        self.dim = dim
+        self.tch_device = tch_device
+        self.tch_dtype = tch_dtype
+        self.cdftab = self.get_cdftab(n_cdfint, dim)
+        
+    def tch_exlinspace(self, start, end, n):
+        assert n >= 1
+        a = torch.linspace(start, end, n+1,
+                           device=self.tch_device,
+                           dtype=self.tch_dtype)[:-1]
+        b = a + 0.5 * (end - a[-1])
+        return b
+        
+    def get_cdftab(self, n_cdfint, dim):
+        r"""
+        This function computes the necessary CDF functions $F_n$ for $1\leq n \leq dim-1$ such that 
+
+            $$F_n(u) = \frac{1}{\int_{0}^{\pi} \sin^{n}(\phi) \text{d}{\phi}} \int_{0}^{\pi u} \sin^{n}(\phi) \text{d}{\phi}.$$
+
+        Note that $F_n(0) = 0$ and $F_n(1)=1$, and that $F_n$ is basically a CDF for a $\sin^{n}$-like PDF.
+        
+        Parameters
+        ----------
+        n_cdfint: (int) The number of points for CDF integration and table lookup.
+
+        dim: (int) The dimension of the space. The unit sphere should be a 
+            `dim-1` dimensional manifold.
+        """
+        # Step 0: Defining the inverse CDF mapping
+        thunif1d = self.tch_exlinspace(0.0, np.pi, n_cdfint)
+        assert thunif1d.shape == (n_cdfint,)
+
+        thunif = thunif1d.reshape(1, n_cdfint).expand(dim-1, n_cdfint)
+        assert thunif.shape == (dim-1, n_cdfint)
+
+        sinpow = torch.arange(dim-2, -1, -1, device=self.tch_device).reshape(dim-1, 1)
+        assert sinpow.shape == (dim-1, 1)
+
+        thsinpow = torch.sin(thunif) ** sinpow
+        assert thsinpow.shape == (dim-1, n_cdfint)
+
+        cdftab = thsinpow.cumsum(dim=-1)
+        cdftab = cdftab / cdftab[:, -1:]
+        assert cdftab.shape == (dim-1, n_cdfint)
+        
+        return cdftab
+        
+    def __call__(self, unifs):
+        """
+        Takes a set of uniform random values in the $[0, 1]^{dim-1}$ cube, and transforms it 
+        to the points on the surface of the $d$-dimensional unit-ball.
+        
+        The transformation is designed in a way such that uniform inputs in the rectangle lead
+        to uniform points on the surface of the unit-ball.
+        
+        Parameters
+        ----------
+        unifs: (torch.tensor) An input tensor with all values between 0 and 1. This input can 
+            be batched. The shape of this tensor must end with `dim-1`.
+            
+            Example:
+                `dim = 5`
+                `unifs = torch.rand(100, 10, 25, 4)`
+            
+        Output
+        ------
+        x_cart: (torch.tensor) The output points on the unit sphere in the cartesian system.
+            This will have the same batch dimensions as the input.
+            
+            Example:
+                `dim = 5`
+                `unifs = torch.rand(100, 10, 25, 4)`
+                `assert x_cart.shape == (100, 10, 25, 5)`
+        """
+        dim, cdftab, n_cdfint = self.dim, self.cdftab, self.n_cdfint
+        tch_dtype, tch_device = self.tch_dtype, self.tch_device
+        assert unifs.shape[-1] == dim-1
+        
+        u_mbdims = unifs.shape[:-1]
+        n_samp = np.prod(u_mbdims)
+        
+        # Step 2: Applying the inverse CDF mapping
+        unifs_T = unifs.reshape(n_samp, dim-1).T.contiguous()
+        assert unifs_T.shape == (dim-1, n_samp)
+
+        cdfranks_T = torch.searchsorted(cdftab, unifs_T)
+        assert cdfranks_T.shape == (dim-1, n_samp)
+
+        cdfranks = cdfranks_T.T.reshape(n_samp, dim-1)
+        assert cdfranks.shape == (n_samp, dim-1)
+
+        cdfinvu = (cdfranks / n_cdfint).to(unifs.dtype)
+        assert cdfinvu.shape == (n_samp, dim-1)
+
+        # Step 3: Scaling the uniform values to the phi ranges
+        #   Note: $\phi_{d-1}$ should be in the $[0, 2\pi]$ range, unlike 
+        #         the $[0, \pi]$ range for the rest of the coordinates.
+        phi_scale = torch.tensor([np.pi]*(dim-2) + [2*np.pi]).to(
+            dtype=tch_dtype, device=tch_device).reshape(1, dim-1)
+        assert phi_scale.shape == (1, dim-1)
+
+        phi = cdfinvu * phi_scale
+        assert phi.shape == (n_samp, dim-1)
+
+        # Step 4: Translating to cartesian coordinates
+        phi_cos_ = torch.cos(phi)
+        assert phi_cos_.shape == (n_samp, dim-1)
+
+        phi_cos = torch.cat([phi_cos_, torch.ones(n_samp, 1, 
+            dtype=tch_dtype, device=tch_device)], dim=-1)
+        assert phi_cos.shape == (n_samp, dim)
+
+        phi_sin = torch.sin(phi)
+        assert phi_sin.shape == (n_samp, dim-1)
+
+        phi_sincumprod_ = phi_sin.cumprod(dim=-1)
+        assert phi_sincumprod_.shape == (n_samp, dim-1)
+
+        phi_sincumprod = torch.cat([torch.ones(n_samp, 1, dtype=tch_dtype, 
+            device=tch_device), phi_sincumprod_], dim=-1)
+        assert phi_sincumprod.shape == (n_samp, dim)
+
+        x_cart_ = phi_sincumprod * phi_cos
+        assert x_cart_.shape == (n_samp, dim)
+
+        # Making sure the points lie on the unit sphere
+        assert x_cart_.square().sum(dim=-1).allclose(torch.ones(1, dtype=tch_dtype, 
+            device=tch_device))
+
+        x_cart = x_cart_.reshape(*u_mbdims, dim)
+        assert x_cart.shape == (*u_mbdims, dim)
+        
+        return x_cart
+    
+
+
 # %% code_folding=[0]
 class SphereSampler:
     def __init__(self, batch_rng):
@@ -429,7 +625,7 @@ class SphereSampler:
         b = a + 0.5 * (end - a[-1])
         return b
 
-    def __call__(self, volumes, n, do_detspacing=True):
+    def __call__(self, volumes, n, trnsfrm_params, samp_params, do_randrots=True, do_shflpts=True):
         # volumes -> dictionary
         assert volumes['type'] == 'ball'
         centers = volumes['centers']
@@ -446,64 +642,189 @@ class SphereSampler:
         meshgrid = np.meshgrid if use_np else torch.meshgrid
         sin = np.sin if use_np else torch.sin
         cos = np.cos if use_np else torch.cos
+        arccos = np.arccos if use_np else torch.arccos
         matmul = np.matmul if use_np else torch.matmul
-
-        if do_detspacing and (d == 2):
-            theta = exlinspace(0.0, 2*np.pi, n)
-            assert theta.shape == (n,)
-            theta_2d = theta.reshape(n, 1)
-            x_tilde_2d_list = [cos(theta_2d), sin(theta_2d)]
-            if use_np:
-                x_tilde_2d = np.concatenate(x_tilde_2d_list, axis=1)
-            else:
-                x_tilde_2d = torch.cat(x_tilde_2d_list, dim=1)
-            assert x_tilde_2d.shape == (n, d)
-            x_tilde_4d = x_tilde_2d.reshape(1, 1, n, d)
-            assert x_tilde_4d.shape == (1, 1, n, d)
-            x_tilde = x_tilde_4d.expand(n_bch, 1, n, d)
-            assert x_tilde.shape == (n_bch, 1, n, d)
-        elif do_detspacing and (d == 3):
-            n_sqrt = int(np.sqrt(n))
-            assert n == n_sqrt * n_sqrt, 'Need n to be int-square for now!'
-            theta_1d = exlinspace(0.0, 2*np.pi, n_sqrt)
-            unit_unif = exlinspace(0.0, 1.0, n_sqrt)
-            if use_np:
-                phi_1d = np.arccos(1-2*unit_unif)
-            else:
-                phi_1d = torch.arccos(1-2*unit_unif)
-            theta_msh, phi_msh = meshgrid(theta_1d, phi_1d)
-            assert theta_msh.shape == (n_sqrt, n_sqrt)
-            assert phi_msh.shape == (n_sqrt, n_sqrt)
-            theta_2d, phi_2d = theta_msh.reshape(n, 1), phi_msh.reshape(n, 1)
-            assert theta_2d.shape == (n, 1)
-            assert phi_2d.shape == (n, 1)
-            x_tilde_lst = [sin(phi_2d) * cos(theta),
-                           sin(phi_2d) * sin(theta), cos(phi_2d)]
-            if use_np:
-                x_tilde_2d = np.concatenate(x_tilde_lst, axis=1)
-            else:
-                x_tilde_2d = torch.cat(x_tilde_lst, dim=1)
-            assert x_tilde_2d.shape == (n, d)
-            x_tilde_4d = x_tilde_2d.reshape(1, 1, n, d)
-            assert x_tilde_4d.shape == (1, 1, n, d)
-            x_tilde = x_tilde_4d.expand(n_bch, 1, n, d)
-            assert x_tilde.shape == (n_bch, 1, n, d)
-        elif (not do_detspacing) and (not use_np):
-            x_tilde_unnorm = self.batch_rng.normal((n_bch, n_v, n, d))
-            x_tilde_l2 = torch.sqrt(torch.square(x_tilde_unnorm).sum(dim=-1))
-            x_tilde = x_tilde_unnorm / x_tilde_l2.reshape(n_bch, n_v, n, 1)
-            assert x_tilde.shape == (n_bch, n_v, n, d)
+        
+        # Phase 0: Input arguments processing
+        
+        # Taking shallow copies
+        trnsfrm_params, samp_params = dict(trnsfrm_params), dict(samp_params)
+        trnsfrm_mthd = trnsfrm_params.pop('dstr')
+        if trnsfrm_mthd == 'cube2sphr':
+            cube2sphr = trnsfrm_params.pop('cube2sphr')
+            rv_dim = d - 1
+        elif trnsfrm_mthd == 'normscale':
+            rv_dim = d
+        else:
+            raise RuntimeError('Not implemented')
+        assert len(trnsfrm_params) == 0, f'unknown params: {trnsfrm_params}'
+        
+        samp_mthd = samp_params.pop('dstr')
+        if samp_mthd == 'quad':
+            quad_x = samp_params.pop('x')
+            assert quad_x.shape == (n, rv_dim)
+            quad_w = samp_params.pop('w')
+            assert quad_w.shape == (n,)
+            n_bch_, n_v_ = 1, 1
+        elif samp_mthd == 'qmc':
+            qmc_x = samp_params.pop('x')
+            assert qmc_x.shape == (n, rv_dim)
+            n_bch_, n_v_ = 1, 1
+        elif samp_mthd == 'rng':
+            n_bch_, n_v_ = n_bch, n_v
+        elif samp_mthd == 'grid':
+            n_bch_, n_v_ = 1, 1
+        else:
+            raise RuntimeError('Not implemented')
+        assert len(samp_params) == 0, f'unknown params: {samp_params}'
+        en_randrots = do_randrots and (samp_mthd in ('grid', 'quad', 'qmc'))
+        en_shflpts = do_shflpts and (samp_mthd in ('quad', 'qmc', 'grid'))
+        
+        # Phase 1: Creating the `norms`, `unifs`, and `weights` variables.
+        #          We either create or sample these variables, or process 
+        #          the input arguments to create them.
+        if (samp_mthd == 'grid') and (trnsfrm_mthd == 'normscale'):
+            n_droot = int(np.round(n ** (1.0 / d)))
+            assert n == (n_droot ** d), f'N={n} should have an integer {d} root (n_droot={n_droot})'
+            u1d = exlinspace(0, 1, n_droot)
+            assert u1d.shape == (n_droot,)
+            n1d = torch.erfinv(2 * u1d - 1) * np.sqrt(2)
+            norms = torch.cartesian_prod(*([n1d] * d)).reshape(1, 1, n, d)
+            assert norms.shape == (n_bch_, n_v_, n, d)
+            weights = torch.ones(1, 1, 1, dtype=self.tch_dtype, 
+                device=self.tch_device).expand(n_bch, n_v, n)
+            assert weights.shape == (n_bch, n_v, n)
+        elif (samp_mthd == 'grid') and (trnsfrm_mthd == 'cube2sphr'):
+            n_droot = int(np.round(n ** (1.0 / (d-1))))
+            assert n == (n_droot ** (d-1)), f'N={n} should have an integer {d-1} root'
+            u1d = exlinspace(0, 1, n_droot)
+            assert u1d.shape == (n_droot,)
+            unifs = torch.cartesian_prod(*([u1d] * (d-1))).reshape(1, 1, n, d-1)
+            assert unifs.shape == (n_bch_, n_v_, n, d-1)
+            weights = torch.ones(1, 1, 1, dtype=self.tch_dtype, 
+                device=self.tch_device).expand(n_bch, n_v, n)
+            assert weights.shape == (n_bch, n_v, n)
+        elif (samp_mthd == 'rng') and (trnsfrm_mthd == 'normscale'):
+            norms = self.batch_rng.normal((n_bch, n_v, n, d))
+            assert norms.shape == (n_bch_, n_v_, n, d)
+            weights = torch.ones(1, 1, 1, dtype=self.tch_dtype, 
+                device=self.tch_device).expand(n_bch, n_v, n)
+            assert weights.shape == (n_bch, n_v, n)
+        elif (samp_mthd == 'rng') and (trnsfrm_mthd == 'cube2sphr'):
+            unifs = self.batch_rng.uniform((n_bch, n_v, n, d-1))
+            assert unifs.shape == (n_bch_, n_v_, n, d-1)
+            weights = torch.ones(1, 1, 1, dtype=self.tch_dtype, 
+                device=self.tch_device).expand(n_bch, n_v, n)
+            assert weights.shape == (n_bch, n_v, n)
+        elif (samp_mthd == 'quad') and (trnsfrm_mthd == 'normscale'):
+            norms = quad_x.reshape(1, 1, n, d)
+            assert norms.shape == (n_bch_, n_v_, n, d)
+            weights = quad_w.reshape(1, 1, n).expand(n_bch, n_v, n)
+            assert weights.shape == (n_bch, n_v, n)
+        elif (samp_mthd  == 'quad') and (trnsfrm_mthd == 'cube2sphr'):            
+            unifs = quad_x.reshape(1, 1, n, d-1)
+            assert unifs.shape == (n_bch_, n_v_, n, d-1)
+            weights = quad_w.reshape(1, 1, n).expand(n_bch, n_v, n)
+            assert weights.shape == (n_bch, n_v, n)
+        elif (samp_mthd == 'qmc') and (trnsfrm_mthd == 'normscale'):
+            # norms = torch.erfinv(2 * qmc_x.reshape(1, 1, n, d) - 1) * np.sqrt(2)
+            norms = qmc_x.reshape(1, 1, n, d)
+            assert norms.shape == (n_bch_, n_v_, n, d)
+            weights = torch.ones(1, 1, 1, dtype=self.tch_dtype, 
+                device=self.tch_device).expand(n_bch, n_v, n)
+            assert weights.shape == (n_bch, n_v, n)
+        elif (samp_mthd == 'qmc') and (trnsfrm_mthd == 'cube2sphr'):
+            unifs = qmc_x.reshape(1, 1, n, d-1)
+            assert unifs.shape == (n_bch_, n_v_, n, d-1)
+            weights = torch.ones(1, 1, 1, dtype=self.tch_dtype, 
+                device=self.tch_device).expand(n_bch, n_v, n)
+            assert weights.shape == (n_bch, n_v, n)
         else:
             raise RuntimeError('Not implemented yet!')
 
-        if do_detspacing:
+        # End of Phase 1. At this point, we should have the following 
+        # satisfied under all conditions.
+        assert weights.shape == (n_bch, n_v, n)
+        if (trnsfrm_mthd == 'cube2sphr'):
+            assert unifs.shape == (n_bch_, n_v_, n, d-1)
+            assert (unifs >= 0.0).all()
+            assert (unifs <= 1.0).all()
+        else:
+            assert norms.shape == (n_bch_, n_v_, n, d)
+            assert (norms.square().sum(dim=-1) > 0).all()
+            
+        # Phase 2: Transforming `norms`/`unifs` to points on the unit-sphere.
+        #          Inputs: `norms` and `unifs`.
+        #          Outputs: `x_tilde_`
+        if trnsfrm_mthd == 'normscale':
+            norms_l2 = torch.sqrt(torch.square(norms).sum(dim=-1))
+            x_tilde_ = norms / norms_l2.reshape(n_bch_, n_v_, n, 1)
+            assert x_tilde_.shape == (n_bch_, n_v_, n, d)
+        elif trnsfrm_mthd == 'cube2sphr':
+            if cube2sphr is not None:
+                assert cube2sphr is not None
+                x_tilde_ = cube2sphr(unifs)
+                assert x_tilde_.shape == (n_bch_, n_v_, n, d) 
+            elif (cube2sphr is None) and (d in [2, 3]):
+                if d == 2:
+                    theta_2d = unifs * (2 * np.pi)
+                    assert theta_2d.shape == (n_bch_, n_v_, n, 1)
+                    x_tilde_list = [cos(theta_2d), sin(theta_2d)]
+                elif d == 3:
+                    u1_2d, u2_2d = unifs[..., :1], unifs[..., 1:]
+                    assert u1_2d.shape == (n_bch_, n_v_, n, 1)
+                    assert u2_2d.shape == (n_bch_, n_v_, n, 1)
+                    phi_2d = arccos(1- 2 * u2_2d)
+                    theta_2d = u1_2d * (2 * np.pi)
+                    x_tilde_list = [sin(phi_2d) * cos(theta_2d),
+                                    sin(phi_2d) * sin(theta_2d), 
+                                    cos(phi_2d)]
+                else:
+                    raise RuntimeError('Not implemented yet!')
+                if use_np:
+                    x_tilde_ = np.concatenate(x_tilde_list, axis=-1)
+                else:
+                    x_tilde_ = torch.cat(x_tilde_list, dim=-1)
+                assert x_tilde_.shape == (n_bch_, n_v_, n, d)
+            else:
+                raise RuntimeError('Not implemented yet!')
+        else:
+            raise RuntimeError('Not implemented yet!')
+        
+        # End of Phase 2. At this point, we should have the following
+        # satisfied under all conditions
+        assert x_tilde_.shape == (n_bch_, n_v_, n, d)
+        
+        # Phase 3: Final touches: random rotations, shuffling, constant calculations, etc.
+        x_tilde = x_tilde_.expand(n_bch, n_v, n, d)
+        assert x_tilde.shape == (n_bch, n_v, n, d)
+        
+        if en_shflpts:
+            rngunifs = self.batch_rng.uniform((n_bch, n_v, n))
+            assert rngunifs.shape == (n_bch, n_v, n)
+            randperm3d = rngunifs.argsort(dim=-1)
+            assert randperm3d.shape == (n_bch, n_v, n)
+            randperm4d = randperm3d.reshape(n_bch, n_v, n, 1)
+            assert randperm4d.shape == (n_bch, n_v, n, 1)
+            
+            x_tilde_shfld = torch.take_along_dim(x_tilde, randperm4d, dim=-2)
+            assert x_tilde_shfld.shape == (n_bch, n_v, n, d)
+            weights_shfld = torch.take_along_dim(weights, randperm3d, dim=-1)
+            assert weights_shfld.shape == (n_bch, n_v, n)
+        else:
+            x_tilde_shfld = x_tilde
+            assert x_tilde_shfld.shape == (n_bch, n_v, n, d)
+            weights_shfld = weights
+            assert weights_shfld.shape == (n_bch, n_v, n)
+
+        if en_randrots:
             rot_mats = self.batch_rng.so_n((n_bch, n_v, d, d))
             assert rot_mats.shape == (n_bch, n_v, d, d)
-
-        if do_detspacing:
-            x_tilde_rot = matmul(x_tilde, rot_mats)
+            
+        if en_randrots:
+            x_tilde_rot = matmul(x_tilde_shfld, rot_mats)
         else:
-            x_tilde_rot = x_tilde
+            x_tilde_rot = x_tilde_shfld
         assert x_tilde_rot.shape == (n_bch, n_v, n, d)
 
         points = x_tilde_rot * \
@@ -511,11 +832,11 @@ class SphereSampler:
         assert points.shape == (n_bch, n_v, n, d)
 
         if use_np:
-            x_tilde_bc = np.broadcast_to(x_tilde, (n_bch, n_v, n, d))
+            x_tilde_bc = np.broadcast_to(x_tilde_shfld, (n_bch, n_v, n, d))
         else:
-            x_tilde_bc = x_tilde.expand(n_bch, n_v, n, d)
+            x_tilde_bc = x_tilde_shfld.expand(n_bch, n_v, n, d)
 
-        if do_detspacing:
+        if en_randrots:
             rot_x_tilde = matmul(x_tilde_bc, rot_mats)
         else:
             rot_x_tilde = x_tilde_bc
@@ -525,7 +846,7 @@ class SphereSampler:
         csts = cst * (radii**(d-1))
         assert csts.shape == (n_bch, n_v)
 
-        ret_dict = dict(points=points, normals=rot_x_tilde, areas=csts)
+        ret_dict = dict(points=points, normals=rot_x_tilde, weights=weights_shfld, areas=csts)
         return ret_dict
 
 
@@ -600,8 +921,8 @@ def get_nn_sol(model, x, n_eval=None, get_field=True,
         if get_field:
             e_pred_i, = torch.autograd.grad(v_pred_i.sum(), [x_iiii],
                 grad_outputs=None, retain_graph=False, create_graph=False,
-                only_inputs=True, allow_unused=False).squeeze(-1).detach()
-            e_pred_ii = to_lib(e_pred_i)
+                only_inputs=True, allow_unused=False)
+            e_pred_ii = to_lib(e_pred_i.squeeze(-1).detach())
             e_pred_list.append(e_pred_ii)
 
     v_pred = lib_cat(v_pred_list)
@@ -791,8 +1112,10 @@ def plot_sol(x1_msh_np, x2_msh_np, sol_dict, fig=None, ax=None, cax=None):
         assert ax is not None
    
     e_percentile_cap = 90
-    
-    v_np = sol_dict['v_np']
+    if 'v_np' in sol_dict:
+        v_np = sol_dict['v_np']
+    else:
+        v_np = sol_dict['v'].detach().cpu().numpy()
     assert v_np.shape[-1] == n_g
     
     v_msh_np = v_np.reshape(-1, n_gpd, n_gpd).mean(axis=0)
@@ -801,7 +1124,13 @@ def plot_sol(x1_msh_np, x2_msh_np, sol_dict, fig=None, ax=None, cax=None):
     if cax is not None:
         fig.colorbar(im, cax=cax)
 
-    e_msh_np = sol_dict['e_np']
+    if 'e_np' in sol_dict:
+        e_msh_np = sol_dict['e_np']
+    else:
+        e_msh_np = sol_dict['e']
+        if e_msh_np is not None:
+            e_msh_np = e_msh_np.detach().cpu().numpy()
+    
     if e_msh_np is not None:
         assert e_msh_np.shape[-2:] == (n_g, dim)
         e_msh_np = e_msh_np.reshape(-1, n_gpd,
@@ -876,12 +1205,20 @@ def get_perfdict(e_pnts, e_mdlsol, e_prbsol):
         assert err_pln.shape == (n_seeds, n_evlpnts)
         
         # The bias-corrected error matrix
-        e_mdlsol2 = e_mdlsol - e_mdlsol.mean(dim=1, keepdims=True)
+        e_mdlsol2 = e_mdlsol - e_mdlsol.mean(dim=-1, keepdims=True)
         assert e_mdlsol2.shape == (n_seeds, n_evlpnts)
-        e_prbsol2 = e_prbsol - e_prbsol.mean(dim=1, keepdims=True)
+        e_prbsol2 = e_prbsol - e_prbsol.mean(dim=-1, keepdims=True)
         assert e_prbsol2.shape == (n_seeds, n_evlpnts)
         err_bc = e_mdlsol2 - e_prbsol2
         assert err_bc.shape == (n_seeds, n_evlpnts)
+        
+        # The bias-corrected and normalized error matrix
+        e_mdlsol3 = e_mdlsol2 / e_mdlsol2.square().mean(dim=-1, keepdims=True).sqrt()
+        assert e_mdlsol3.shape == (n_seeds, n_evlpnts)
+        e_prbsol3 = e_prbsol2 / e_prbsol2.square().mean(dim=-1, keepdims=True).sqrt()
+        assert e_prbsol3.shape == (n_seeds, n_evlpnts)
+        err_bcn = e_mdlsol3 - e_prbsol3
+        assert err_bcn.shape == (n_seeds, n_evlpnts)
         
         # The slope-corrected error matrix
         e_pntstrans = e_pnts.transpose(-1, -2)
@@ -895,32 +1232,38 @@ def get_perfdict(e_pnts, e_mdlsol, e_prbsol):
         
         # e_pntpinv = torch.pinverse(e_pnts)
         # assert e_pntpinv.shape == (n_seeds, dim, n_evlpnts)
-        
+
         e_mdlbeta = e_pntpinv.matmul(e_mdlsol2.unsqueeze(-1))
         assert e_mdlbeta.shape == (n_seeds, dim, 1)
         e_mdlslpcrc = e_pnts.matmul(e_mdlbeta)
         assert e_mdlslpcrc.shape == (n_seeds, n_evlpnts, 1)
-        e_mdlsol3 = e_mdlsol2 - e_mdlslpcrc.squeeze(-1)
-        assert e_mdlsol3.shape == (n_seeds, n_evlpnts)
+        e_mdlsol4 = e_mdlsol2 - e_mdlslpcrc.squeeze(-1)
+        assert e_mdlsol4.shape == (n_seeds, n_evlpnts)
         
         e_prbbeta = e_pntpinv.matmul(e_prbsol2.unsqueeze(-1))
         assert e_prbbeta.shape == (n_seeds, dim, 1)
         e_prbslpcrc = e_pnts.matmul(e_prbbeta)
         assert e_prbslpcrc.shape == (n_seeds, n_evlpnts, 1)
-        e_prbsol3 = e_prbsol2 - e_prbslpcrc.squeeze(-1)
-        assert e_prbsol3.shape == (n_seeds, n_evlpnts)
+        e_prbsol4 = e_prbsol2 - e_prbslpcrc.squeeze(-1)
+        assert e_prbsol4.shape == (n_seeds, n_evlpnts)
         
-        err_slc = e_mdlsol3 - e_prbsol3
+        err_slc = e_mdlsol4 - e_prbsol4
         assert err_slc.shape == (n_seeds, n_evlpnts)
         
         # The normalized slope-corrected error matrix
-        e_mdlsol4 = e_mdlsol3 / e_mdlsol3.std(dim=1, keepdim=True)
-        assert e_mdlsol4.shape == (n_seeds, n_evlpnts)
+        e_mdlsol5 = e_mdlsol4 - e_mdlsol4.mean(dim=-1, keepdims=True)
+        assert e_mdlsol5.shape == (n_seeds, n_evlpnts)
         
-        e_prbsol4 = e_prbsol3 / e_prbsol3.std(dim=1, keepdim=True)
-        assert e_prbsol4.shape == (n_seeds, n_evlpnts)
+        e_mdlsol6 = e_mdlsol5 / e_mdlsol5.square().mean(dim=-1, keepdims=True).sqrt()
+        assert e_mdlsol6.shape == (n_seeds, n_evlpnts)
         
-        err_scn = e_mdlsol4 - e_prbsol4
+        e_prbsol5 = e_prbsol4 - e_prbsol4.mean(dim=-1, keepdims=True)
+        assert e_prbsol5.shape == (n_seeds, n_evlpnts)
+        
+        e_prbsol6 = e_prbsol5 / e_prbsol5.square().mean(dim=-1, keepdims=True).sqrt()
+        assert e_prbsol6.shape == (n_seeds, n_evlpnts)
+        
+        err_scn = e_mdlsol6 - e_prbsol6
         assert err_scn.shape == (n_seeds, n_evlpnts)
         
         # Computing the mse and mae values
@@ -933,6 +1276,11 @@ def get_perfdict(e_pnts, e_mdlsol, e_prbsol):
         assert e_bcmse.shape == (n_seeds,)
         e_bcmae = err_bc.abs().mean(dim=-1)
         assert e_bcmse.shape == (n_seeds,)
+        
+        e_bcnmse = err_bcn.square().mean(dim=-1)
+        assert e_bcnmse.shape == (n_seeds,)
+        e_bcnmae = err_bcn.abs().mean(dim=-1)
+        assert e_bcnmse.shape == (n_seeds,)
         
         e_slcmse = err_slc.square().mean(dim=-1)
         assert e_slcmse.shape == (n_seeds,)
@@ -948,13 +1296,14 @@ def get_perfdict(e_pnts, e_mdlsol, e_prbsol):
                    'pln/mae': e_plnmae.detach().cpu().numpy(),
                    'bc/mse': e_bcmse.detach().cpu().numpy(),
                    'bc/mae': e_bcmae.detach().cpu().numpy(),
+                   'bcn/mse': e_bcnmse.detach().cpu().numpy(),
+                   'bcn/mae': e_bcnmae.detach().cpu().numpy(),
                    'slc/mse': e_slcmse.detach().cpu().numpy(),
                    'slc/mae': e_slcmae.detach().cpu().numpy(),
                    'scn/mse': e_scnmse.detach().cpu().numpy(),
                    'scn/mae': e_scnmae.detach().cpu().numpy()}
     
     return outdict
-
 
 # %% [markdown]
 # ## Optional Visualization Tests
@@ -1063,7 +1412,9 @@ def get_perfdict(e_pnts, e_mdlsol, e_prbsol):
 # sphsampler_2d = SphereSampler(batch_rng=rng)
 #
 # vols = volsampler_2d(n=10)
-# sphsamps2d = sphsampler_2d(vols, 100, do_detspacing=True)
+# sphsamps2d = sphsampler_2d(vols, 100, 
+#     trnsfrm_params=dict(dstr='cube2sphr', cube2sphr=None), 
+#     samp_params=dict(dstr='grid'), do_randrots=True, do_shflpts=False)
 # points = sphsamps2d['points']
 # surfacenorms = sphsamps2d['normals']
 # if torch.is_tensor(points):
@@ -1096,6 +1447,70 @@ def get_perfdict(e_pnts, e_mdlsol, e_prbsol):
 #
 # fig
 
+
+# %% [markdown]
+# ### Visualizing the Unit Cube to Unit Sphere Transformation
+
+# %% tags=["active-ipynb"]
+# dim = 3
+# n_bch, n_v, n = 1, 1, 100
+#
+# ex_device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+# ex_tchdevice = torch.device(ex_device)
+# ex_tchdtype = torch.double
+#
+# rng = BatchRNG(shape=(n_bch,), lib='torch', device=ex_tchdevice, dtype=ex_tchdtype,
+#                unif_cache_cols=1000, norm_cache_cols=5000)
+# rng.seed(np.broadcast_to(12345+np.arange(n_bch), rng.shape))
+#
+#
+# ex_cube2sphr = Cube2Sphere(n_cdfint=10000, dim=dim, tch_device=ex_tchdevice,
+#     tch_dtype=ex_tchdtype)
+#
+# # Step 1: Sampling uniform numbers
+# #   Option 1: we can use truly random numbers in the [0,1] intervals.
+# ex_unifs = rng.uniform((n_bch, n_v, n, dim-1))
+# assert ex_unifs.shape == (n_bch, n_v, n, dim-1)
+#
+# #   Option 2: we could pass a meshgrid as uniform samples.
+# n_droot = int(n**(1.0/(dim-1)))
+# assert n == n_droot ** (dim-1)
+# u1d = ex_cube2sphr.tch_exlinspace(0, 1, n_droot)
+# ex_unifs_ = torch.cartesian_prod(*([u1d] * (dim-1))).reshape(n, dim-1)
+# assert ex_unifs_.shape == (n, dim-1)
+# ex_unifs = ex_unifs_.reshape(1, 1, n, dim-1).expand(n_bch, n_v, n, dim-1)
+# assert ex_unifs.shape == (n_bch, n_v, n, dim-1)
+#
+# # Applying the uniform cube to uniform sphere transformation
+# sphr_x = ex_cube2sphr(ex_unifs)
+# assert sphr_x.shape == (n_bch, n_v, n, dim)
+
+# %% tags=["active-ipynb"]
+# fig = plt.figure(dpi=36)
+# ax = fig.add_subplot(projection='3d')
+#
+# x_np = sphr_x.reshape(n_bch * n_v * n, dim).detach().cpu().numpy()
+# ax.scatter(x_np[:, 2], x_np[:, 1], x_np[:, 0], marker='o', s=20)
+#
+# ax.grid(False)
+# ax.set_box_aspect((2, 2, 2))
+# ax.set_xticks([-1.0, 0.0, 1.0])
+# ax.set_xticklabels([-1.0, 0.0, 1.0])
+# ax.set_yticks([]); ax.set_yticklabels([])
+# ax.set_zticks([]); ax.set_zticklabels([])
+# for saxis in [ax.xaxis, ax.yaxis, ax.zaxis]:
+#     saxis.set_pane_color((1.0, 1.0, 1.0, 1.0))
+#     saxis.line.set_color((1.0, 1.0, 1.0, 0.0))
+# ax.set_xlim3d(-1, 1); ax.set_ylim3d(-1, 1); ax.set_zlim3d(-1, 1)
+# ax.quiver(-1.0, -1.0, -1.0, 2.4, 0.0, 0.0, color='k', lw=3, arrow_length_ratio=0.1)
+# ax.quiver(-1.0, -1.0, -1.0, 0.0, 2.4, 0.0, color='k', lw=3, arrow_length_ratio=0.1)
+# ax.quiver(-1.0, -1.0, -1.0, 0.0, 0.0, 2.4, color='k', lw=3, arrow_length_ratio=0.1)
+#
+# ax.tick_params(axis='both', which='major', pad=-5)
+# uu, vv = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
+# ax.plot_wireframe(np.cos(uu)*np.sin(vv), np.sin(uu)*np.sin(vv), np.cos(vv), color="black", lw=0.1)
+#
+# fig
 
 # %% [markdown]
 # ## Utility Functions for Sanity Checks
@@ -1245,18 +1660,24 @@ def chck_dstrargs(opt, cfgdict, dstr2args, opt2req, parnt_optdstr=None):
 # ## JSON Config Loading and Preprocessing
 
 # %% code_folding=[1] tags=["active-ipynb"]
-# json_cfgpath = f'../configs/00_scratch/04_hidim.json'
-# ! rm -rf "./09_poisson/results/04_hidim.h5"
-# ! rm -rf "./09_poisson/storage/04_hidim"
-# with open(json_cfgpath, 'r') as fp:
-#     json_cfgdict = json.load(fp, object_pairs_hook=odict)
-# json_cfgdict['io/config_id'] = '04_hidim'
-# json_cfgdict['io/results_dir'] = './09_poisson/results'
-# json_cfgdict['io/storage_dir'] = './09_poisson/storage'
+# json_cfgpath = f'../configs/01_poisson/20_hindim.yml'
+# ! rm -rf "./23_poisson/results/20_hindim.h5"
+# ! rm -rf "./23_poisson/storage/20_hindim"
+# if json_cfgpath.endswith('.json'):
+#     with open(json_cfgpath, 'r') as fp:
+#         json_cfgdict = json.load(fp, object_pairs_hook=odict)
+# elif json_cfgpath.endswith('.yml'):
+#     with open(json_cfgpath, "r") as fp:
+#         json_cfgdict = odict(yaml.safe_load(fp))
+# else:
+#     raise RuntimeError(f'unknown config extension: {json_cfgpath}')
+# json_cfgdict['io/config_id'] = '20_hindim'
+# json_cfgdict['io/results_dir'] = './23_poisson/results'
+# json_cfgdict['io/storage_dir'] = './23_poisson/storage'
 # json_cfgdict['io/tch/device'] = 'cuda:0'
 #
 # all_cfgdicts = preproc_cfgdict(json_cfgdict)
-# cfg_dict_input = all_cfgdicts[0]
+# cfg_dict_input = all_cfgdicts[6]
 
 
 # %% tags=["active-py"]
@@ -1285,9 +1706,8 @@ def main(cfg_dict_input):
     n_srf = cfg_dict.pop('vol/n')
     n_srfpts_mdl = cfg_dict.pop('srfpts/n/mdl')
     n_srfpts_trg = cfg_dict.pop('srfpts/n/trg')
-    do_detspacing = cfg_dict.pop('srfpts/detspc')
     do_dblsampling = cfg_dict.pop('srfpts/dblsmpl')
-
+    
     do_bootstrap = cfg_dict.pop('trg/btstrp')
     if do_bootstrap:
         tau = cfg_dict.pop('trg/tau')
@@ -1300,6 +1720,58 @@ def main(cfg_dict_input):
     n_epochs = cfg_dict.pop('opt/epoch')
     lr = cfg_dict.pop('opt/lr')
 
+    # %%
+    #########################################################
+    ############### Surface Sampling Options ################
+    #########################################################
+    do_detspacing = cfg_dict.pop('srfpts/detspc', None)
+    detspc_cfg = dict()
+    if do_detspacing is None:
+        pass
+    elif do_detspacing == True:
+        detspc_cfg['srfpts/trnsfrm/dstr'] = 'cube2sphr'
+        detspc_cfg['srfpts/trnsfrm/n_cdfint'] = int(1e6)
+        detspc_cfg['srfpts/samp/dstr'] = 'grid'
+        detspc_cfg['srfpts/samp/shflpts'] = True
+    elif do_detspacing == False:
+        detspc_cfg['srfpts/trnsfrm/dstr'] = 'normscale'
+        detspc_cfg['srfpts/samp/dstr'] = 'rng'
+        detspc_cfg['srfpts/samp/shflpts'] = True
+    else:
+        msg_ = f'srfpts/detspc="{do_detspacing}" not implemented yet!'
+        raise ValueError(msg_)
+
+    for key in detspc_cfg:
+        assert key not in cfg_dict, f'cannot specify "{key}" with "srfpts/detspc"'
+    cfg_dict.update(detspc_cfg)
+    cfg_dict_input.update(detspc_cfg)
+
+    srf_tnsfrm = cfg_dict.pop('srfpts/trnsfrm/dstr')
+    if srf_tnsfrm == 'cube2sphr':
+        n_cdfint = cfg_dict.pop('srfpts/trnsfrm/n_cdfint')
+    elif srf_tnsfrm == 'normscale':
+        pass
+    else:
+        msg_ = f'srfpts/trnsfrm/dstr="{srf_tnsfrm}" not defined!'
+        raise ValueError(msg_)
+    
+    srf_samp = cfg_dict.pop('srfpts/samp/dstr')
+    srf_shflpts = cfg_dict.pop('srfpts/samp/shflpts')
+    if srf_samp == 'quad':
+        quad_order = cfg_dict.pop('srfpts/samp/order')
+        quad_rule = cfg_dict.pop('srfpts/samp/rule')
+        quad_sprs = cfg_dict.pop('srfpts/samp/sparse')
+        quad_rcuralg = cfg_dict.pop('srfpts/samp/rcuralg')
+    elif srf_samp == 'qmc':
+        qmc_rule = cfg_dict.pop('srfpts/samp/rule')
+        qmc_antithetic = cfg_dict.pop('srfpts/samp/antithetic')
+    elif srf_samp in ('grid', 'rng'):
+        pass
+    else:
+        msg_ = f'srfpts/samp/dstr="{srf_samp}" not defined!'
+        raise ValueError(msg_)
+
+    # %%
     #########################################################
     ################## Neural Spec Options ##################
     #########################################################
@@ -1346,7 +1818,7 @@ def main(cfg_dict_input):
     else:
         msg_ = f'chrg/mu/dstr="{chrg_mu_dstr}" not defined!'
         raise ValueError(msg_)
-
+    
     #########################################################
     ############### Surface Sampling Options ################
     #########################################################
@@ -1477,8 +1949,11 @@ def main(cfg_dict_input):
     # Making sure the specified option distributions are implemented.
     fixed_opts = ['desc', 'date', 'rng_seed/list', 'problem',
                   'dim', 'vol/n',  'srfpts/n/mdl', 'srfpts/n/trg', 
-                  'srfpts/detspc', 'srfpts/dblsmpl','trg/btstrp', 
-                  'trg/w', 'trg/tau', 'opt/lr', 'opt/epoch']
+                  'srfpts/detspc', 'srfpts/dblsmpl', 'trg/btstrp', 
+                  'trg/w', 'trg/tau', 'opt/lr', 'opt/epoch',
+                  'srfpts/trnsfrm/n_cdfint', 'srfpts/samp/shflpts', 
+                  'srfpts/samp/order', 'srfpts/samp/rule', 'srfpts/samp/sparse', 
+                  'srfpts/samp/rcuralg', 'srfpts/samp/antithetic']
 
     opt2availdstrs = {**{opt: ('fixed',) for opt in fixed_opts},
         'chrg': ('dmm',), 'chrg/n': ('fixed',), 'chrg/w': ('fixed',), 
@@ -1491,6 +1966,8 @@ def main(cfg_dict_input):
         'vol/c/loc': ('fixed',), 'vol/c/scale': ('fixed',),
         'vol/c/c': ('fixed',),   'vol/c/r': ('fixed',),
         'vol/r/low': ('fixed',), 'vol/r/high': ('fixed',),
+        'srfpts/trnsfrm': ('cube2sphr', 'normscale'),
+        'srfpts/samp': ('quad', 'qmc', 'rng', 'grid'),
         **{f'eval/{eid}': ('uniform', 'grid', 'ball', 'trnvol')
             for eid in eid_list}}
 
@@ -1521,9 +1998,9 @@ def main(cfg_dict_input):
 
     key2req = {'vol': ('/n',)}
     if ic_dstr is not None:
-        key2req['ic'] = (*key2req['ic'], '/w')
+        key2req['ic'] = (*key2req.get('ic', []), '/w')
     if ic_needsampling: 
-        key2req['ic'] = (*key2req['ic'], '/n', '/frq')
+        key2req['ic'] = (*key2req.get('ic', []), '/n', '/frq')
 
     for key in ['chrg', 'vol']:
         if key in key2req:
@@ -1570,11 +2047,11 @@ def main(cfg_dict_input):
         tch_dvcmdl = torch.cuda.get_device_name(tch_device)
 
     # Reserving 15.596 GB of memory for later usage
-    t_gpumem = torch.cuda.get_device_properties(tch_device).total_memory
-    tdt_elsize = torch.tensor(1).to(tch_device, tch_dtype).element_size()
-    nuslss = int((0.90 * t_gpumem) / tdt_elsize)
-    useless_tensor = torch.empty((nuslss,), device=tch_device, dtype=tch_dtype)
-    del useless_tensor
+    # t_gpumem = torch.cuda.get_device_properties(tch_device).total_memory
+    # tdt_elsize = torch.tensor(1).to(tch_device, tch_dtype).element_size()
+    # nuslss = int((0.90 * t_gpumem) / tdt_elsize)
+    # useless_tensor = torch.empty((nuslss,), device=tch_device, dtype=tch_dtype)
+    # del useless_tensor
     
     msg_ = f'"io/mon/frq" % "io/avg/frq" != 0'
     assert iomon_period % io_avgfrq == 0, msg_
@@ -1599,6 +2076,7 @@ def main(cfg_dict_input):
                    unif_cache_cols=1_000_000,
                    norm_cache_cols=5_000_000)
     rng.seed(np.broadcast_to(rng_seeds, rng.shape))
+    erng = rng
 
     #########################################################
     ########## Defining the Poisson Problem Object ##########
@@ -1693,7 +2171,7 @@ def main(cfg_dict_input):
     # Defining the problem object
     problem = DeltaProblem(weights=chrg_w, locations=chrg_mu,
         tch_device=tch_device, tch_dtype=tch_dtype)
-
+    
     #########################################################
     ####### Defining the Initial Condition Parameters #######
     #########################################################
@@ -1810,7 +2288,72 @@ def main(cfg_dict_input):
                              r_dstr=vol_r_dstr, r_params=vol_r_params,
                              batch_rng=rng)
 
+    # %%
     srfsampler = SphereSampler(batch_rng=rng)
+    
+    srftnsfrm_params = {'dstr': srf_tnsfrm}
+    if srf_tnsfrm == 'cube2sphr':
+        cube2sphr = Cube2Sphere(n_cdfint=n_cdfint, dim=dim, 
+            tch_device=tch_device, tch_dtype=tch_dtype)
+        srftnsfrm_params['cube2sphr'] = cube2sphr
+        rv_dim = dim - 1
+    elif srf_tnsfrm == 'normscale':
+        cube2sphr, rv_dim = None, dim
+    else:
+        msg_ = f'srf_tnsfrm="{srf_tnsfrm}" not defined!'
+        raise ValueError(msg_)
+        
+    if (srf_tnsfrm == 'cube2sphr') and (srf_samp in ['quad', 'qmc']):
+        cpy_dist = chaospy.Iid(chaospy.Uniform(0, 1), dim-1)
+    elif (srf_tnsfrm == 'normscale') and (srf_samp in ['quad', 'qmc']):
+        cpy_dist = chaospy.Iid(chaospy.Normal(0, 1), dim)
+    elif srf_samp in ['quad', 'qmc']:
+        msg_ = f'srf_tnsfrm="{srf_tnsfrm}" not defined!'
+        raise ValueError(msg_)
+    
+    if srf_samp == 'quad':
+        qx_np, quadw_np = chaospy.generate_quadrature(
+            order=quad_order, dist=cpy_dist, rule=quad_rule, 
+            recurrence_algorithm=quad_rcuralg, sparse=quad_sprs)
+    elif srf_samp == 'qmc':
+        cpy_jac = chaospy.J(cpy_dist)
+        qx_np = cpy_jac.sample(n_points, rule=qmc_rule, 
+            antithetic=qmc_antithetic, include_axis_dim=True)
+    elif srf_samp in ['grid', 'rng']:
+        pass
+    else:
+        raise ValueError('not implemented yet')
+    
+    if (srf_tnsfrm == 'cube2sphr') and (srf_samp in ['quad', 'qmc']):
+        assert np.isclose(min(0.0, qx_np.min()), 0.0)
+        assert np.isclose(max(1.0, qx_np.max()), 1.0)
+        qx_np_ = np.clip(qx_np, 0.0, 1.0)
+    elif (srf_tnsfrm == 'normscale') and (srf_samp in ['quad', 'qmc']):
+        # Important to avoid all zeros scenario that cannot be normalized
+        qx_np_ = qx_np + 1e-12
+        assert (np.square(qx_np_).sum(axis=0) > 0.0).all()
+    elif srf_samp in ['quad', 'qmc']:
+        raise ValueError('not implemented yet')
+    
+    if srf_samp == 'quad':
+        n_quad = quadw_np.size
+        msg_ =  f'The number of quadrature points {n_quad} should be the '
+        msg_ += f'same as the sum of "srfpts/n/mdl"={n_srfpts_mdl} and '
+        msg_ += f'"srfpts/n/trg"={n_srfpts_trg}.'
+        assert n_quad == n_points, msg_
+        quad_x = torch.from_numpy(qx_np_.T).to(device=tch_device, dtype=tch_dtype)
+        assert quad_x.shape == (n_quad, rv_dim)
+        quad_w = torch.from_numpy(quadw_np).to(device=tch_device, dtype=tch_dtype) * n_quad
+        assert quad_w.shape == (n_quad,)
+        srfsamp_params = {'dstr': 'quad', 'x': quad_x, 'w': quad_w}
+    elif srf_samp == 'qmc':
+        qmc_x = torch.from_numpy(qx_np_.T).to(device=tch_device, dtype=tch_dtype)
+        assert qmc_x.shape == (n_points, rv_dim), f'{qmc_x.shape} != {(n_points, rv_dim)}'
+        srfsamp_params = {'dstr': 'qmc', 'x': qmc_x}
+    elif srf_samp in ['grid', 'rng']:
+        srfsamp_params = {'dstr': srf_samp}
+    else:
+        raise ValueError('not implemented yet')
 
     # %%
     #########################################################
@@ -1890,6 +2433,18 @@ def main(cfg_dict_input):
             eopt_p = eopt_pc.to(device=tch_device, dtype=tch_dtype)
             assert eopt_p.shape == (n_seeds, *eoptshp)
             eparam[eopt] = eopt_p
+        
+        if edstr in ('trnvol', 'ball'):
+            for eopt in ('rqnts/dstr', 'rqnts/n', 'use_crn',
+                         'rx/dstr', 'rx/static', 'rx/r/dstr', 
+                         'rx/r/n', 'rx/r/static', 'rx/x/dstr', 
+                         'rx/x/static'):
+                if eopt in eopts:
+                    eparam[eopt] = eopts.pop(eopt)
+        else:
+            for eopt in ('rx/dstr', 'rx/static'):
+                if eopt in eopts:
+                    eparam[eopt] = eopts.pop(eopt)
 
         assert len(eopts) == 0, f'unused eval items left: {eopts}'
         evalprms[eid] = eparam
@@ -1960,6 +2515,192 @@ def main(cfg_dict_input):
             eopts['xi_msh_np'] = gdict['xi_msh_np']
         else:
             raise ValueError(f'"{edstr}" not defined')
+        
+        if edstr in ('ball', 'trnvol'):
+            # `iscrstatic == True` means that the `e_pntcs` and `e_pntrs` must 
+            # be sampled from the `(c_xpnd, r_xpnd)` ball using the RNG 
+            # dynamically through the training.            
+            
+            # Legacy config conversion to the latest form
+            e_rqntsdstrold_ = eopts.get('rqnts/dstr', None)
+            e_usecrn_ = eopts.get('use_crn', None)
+            if e_rqntsdstrold_ is None:
+                pass
+            elif e_rqntsdstrold_ == 'det':
+                assert 'rx/dstr' not in eopts
+                eopts['rx/dstr'] = 'indep'
+                assert 'rx/r/dstr' not in eopts
+                eopts['rx/r/dstr'] = 'det'
+                eopts['rx/r/n'] = eopts['rqnts/n']
+                eopts['rx/x/dstr'] = 'iid'
+                eopts['rx/x/static'] = e_usecrn_ not in (False, None)
+            elif e_rqntsdstrold_ == 'iid':
+                eopts['rx/dstr'] = 'joint'
+                eopts['rx/static'] = e_usecrn_ not in (False, None)
+            else:
+                raise ValueError(f'rqnts/dstr={e_rqntsdstrold_} not implmntd')
+            
+            e_rxdstr = eopts.get('rx/dstr', 'joint')
+            if e_rxdstr == 'joint':
+                e_isrxstatic = eopts.get('rx/static', False)
+                
+                e_iscrstatic, e_isthstatic = False, False
+                # Don't worry! The static points will be generated and 
+                # memorized in the first epoch. No need to reimplement 
+                # all the routines here as well.
+            elif e_rxdstr == 'indep':
+                erqnt_type = eopts.get('rx/r/dstr')
+                if erqnt_type == 'det':
+                    e_iscrstatic = True
+                elif erqnt_type == 'iid':
+                    e_iscrstatic = eopts['rx/r/static']
+                else:
+                    raise ValueError(f'rx/r/dstr={erqnt_type} not implmntd')
+                
+                e_thdstr = eopts.get('rx/x/dstr')
+                if e_thdstr == 'iid':
+                    e_isthstatic = eopts.get('rx/x/static')
+                else:
+                    raise ValueError(f'rx/r/dstr={e_thdstr} not implmntd')
+                
+                n_r_ = eopts['rx/r/n']
+                n_th_ = n_evlpnts // n_r_
+                msg_ == 'to match the random effects, we must have (n_evlpnts mod rqnts/n == 0)'
+                assert n_evlpnts % n_r_ == 0, msg_
+            else:
+                raise ValueError(f'rx/dstr={e_rxdstr} is not implmntd')
+            
+            eopts['iscrstatic'] = e_iscrstatic
+            eopts['isthstatic'] = e_isthstatic
+            
+            if e_rxdstr == 'joint':
+                e_pntcs, e_pntrs, ethtilde = None, None, None
+                
+            if (e_rxdstr == 'indep') and e_iscrstatic and (edstr == 'trnvol'):
+                ####################################################
+                ### Step (1): Finding the mean ball-center point ###
+                ####################################################
+                vol_cdstr = volsampler.c_dstr
+                if vol_cdstr == 'ball':
+                    e_pntcs_ = volsampler.c_cntr
+                    assert e_pntcs_.shape == (n_seeds, 1, dim)
+                elif vol_cdstr == 'normal':
+                    e_pntcs_ = volsampler.c_loc
+                    assert e_pntcs_.shape == (n_seeds, 1, dim)
+                elif vol_cdstr == 'uniform':
+                    msg_  = f'uniform vol centers are mathematically '
+                    msg_ += f'incompatible with static radii evaluations.'
+                    raise ValueError(msg_)
+                else:
+                    msg_ = f'Unknown volume c_dstr={vol_cdstr}'
+                    raise ValueError(msg_)
+                e_pntcs = e_pntcs_.expand(n_seeds, n_evlpnts, dim)
+                assert e_pntcs.shape == (n_seeds, n_evlpnts, dim)
+                
+                ####################################################
+                ## Step (2): Simulating TV points from Volsampler ##
+                ####################################################
+                n_sim = 10000 if erqnt_type == 'det' else n_r_
+                    
+                evols_sim = volsampler(n=n_sim)
+                assert evols_sim['type'] == 'ball'
+                e_pntcssim = evols_sim['centers']
+                assert e_pntcssim.shape == (n_seeds, n_sim, dim)
+                e_rsim_ = evols_sim['radii']
+                assert e_rsim_.shape == (n_seeds, n_sim)
+                e_rsim = e_rsim_.unsqueeze(dim=-1)
+                assert e_rsim.shape == (n_seeds, n_sim, 1)
+                euntrdsim = erng.uniform((n_seeds, n_sim, 1))
+                assert euntrdsim.shape == (n_seeds, n_sim, 1)
+                untrsim = euntrdsim.pow(1.0 / dim)
+                assert untrsim.shape == (n_seeds, n_sim, 1)
+                e_pntrssim = untrsim * e_rsim
+                assert e_pntrssim.shape == (n_seeds, n_sim, 1)
+                
+                ethetasim = erng.normal((n_seeds, n_sim, dim))
+                assert ethetasim.shape == (n_seeds, n_sim, dim)
+                e_thtildesim = ethetasim / ethetasim.norm(dim=-1, keepdim=True)
+                assert e_thtildesim.shape == (n_seeds, n_sim, dim)
+                e_pntssim = e_pntcssim + e_thtildesim * e_pntrssim
+                assert e_pntssim.shape == (n_seeds, n_sim, dim)
+                e_pntsnomeansim = e_pntssim - e_pntcs_
+                assert e_pntsnomeansim.shape == (n_seeds, n_sim, dim)
+                e_realrsim = e_pntsnomeansim.norm(p=2, dim=-1)
+                assert e_realrsim.shape == (n_seeds, n_sim)
+
+                if erqnt_type == 'iid':
+                    e_pntrs_ = e_realrsim.reshape(n_seeds, n_r_, 1).expand(n_seeds, n_r_, n_th_)
+                    assert e_pntrs_.shape == (n_seeds, n_r_, n_th_)
+                    
+                    e_pntrs = e_pntrs_.reshape(n_seeds, n_evlpnts, 1)
+                    assert e_pntrs.shape == (n_seeds, n_evlpnts, 1)
+                elif erqnt_type == 'det':
+                    ####################################################
+                    ####### Step (3): Computing Radius Quantiles #######
+                    ####################################################
+                    r_qs_ = torch.arange(n_r_, device=tch_device, dtype=tch_dtype) / n_r_ + 1.0 / (2 * n_r_)
+                    assert r_qs_.shape == (n_r_,)
+                    e_rqnts_ = torch.quantile(e_realrsim, r_qs_, dim=-1)
+                    assert e_rqnts_.shape == (n_r_, n_seeds)
+                    e_rqnts = e_rqnts_.T
+                    assert e_rqnts.shape == (n_seeds, n_r_)
+                    
+                    e_pntrs_ = e_rqnts.reshape(n_seeds, n_r_, 1).expand(n_seeds, n_r_, n_th_)
+                    assert e_pntrs_.shape == (n_seeds, n_r_, n_th_)
+                    e_pntrs = e_pntrs_.reshape(n_seeds, n_evlpnts, 1)
+                    assert e_pntrs.shape == (n_seeds, n_evlpnts, 1)
+                else:
+                    raise ValueError(f'erqnt_type={erqnt_type} not implmntd')                
+            elif (e_rxdstr == 'indep') and e_iscrstatic and (edstr == 'ball'):
+                e_pntcs = eopts['c_xpnd']
+                assert e_pntcs.shape == (n_seeds, n_evlpnts, dim)
+                
+                e_r_ = eopts['r']
+                assert e_r_.shape == (n_seeds,)
+                if erqnt_type == 'iid':
+                    r_qs = erng.uniform((n_seeds, n_r_, 1)).expand(n_seeds, n_r_, n_th_)
+                    assert r_qs.shape == (n_seeds, n_r_, n_th_)
+                elif erqnt_type == 'det': 
+                    r_qs_ = torch.arange(n_r_, device=tch_device, dtype=tch_dtype) / n_r_ + 1.0 / (2 * n_r_)
+                    assert r_qs_.shape == (n_r_,)
+                    r_qs = r_qs_.reshape(1, n_r_, 1).expand(n_seeds, n_r_, n_th_)
+                    assert r_qs.shape == (n_seeds, n_r_, n_th_)
+                else:
+                    raise ValueError(f'erqnt_type={erqnt_type} not implmntd')
+                
+                e_pntrs_ = (r_qs ** (1.0 / dim)) * e_r_.reshape(n_seeds, 1, 1)
+                assert e_pntrs_.shape == (n_seeds, n_r_, n_th_)
+                e_pntrs = e_pntrs_.reshape(n_seeds, n_evlpnts, 1)
+                assert e_pntrs.shape == (n_seeds, n_evlpnts, 1)
+            elif (e_rxdstr == 'indep') and not(e_iscrstatic):
+                e_pntcs, e_pntrs = None, None
+            elif (e_rxdstr == 'indep'):
+                raise ValueError(f'not implemeted edstr={edstr}')
+            
+            if (e_rxdstr == 'indep') and e_isthstatic and e_iscrstatic:
+                etheta_ = erng.normal((n_seeds, 1, n_th_, dim))
+                assert etheta_.shape == (n_seeds, 1, n_th_, dim)
+                
+                etheta2_ = etheta_.expand(n_seeds, n_r_, n_th_, dim)
+                assert etheta2_.shape == (n_seeds, n_r_, n_th_, dim)
+                
+                etheta = etheta2_.reshape(n_seeds, n_evlpnts, dim)
+                assert etheta.shape == (n_seeds, n_evlpnts, dim)
+
+                ethtilde = etheta / etheta.norm(dim=-1, keepdim=True)
+                assert ethtilde.shape == (n_seeds, n_evlpnts, dim)
+            elif (e_rxdstr == 'indep') and e_isthstatic and not(e_iscrstatic):                
+                etheta = erng.normal((n_seeds, n_evlpnts, dim))
+                assert etheta.shape == (n_seeds, n_evlpnts, dim)
+
+                ethtilde = etheta / etheta.norm(dim=-1, keepdim=True)
+                assert ethtilde.shape == (n_seeds, n_evlpnts, dim)   
+            elif (e_rxdstr == 'indep'):
+                ethtilde = None
+                
+            eopts['pnt_c'] = e_pntcs
+            eopts['pnt_r'] = e_pntrs
+            eopts['thtilde'] = ethtilde
 
     # %%
     #########################################################
@@ -1969,7 +2710,8 @@ def main(cfg_dict_input):
     hppats = ['problem', 'dim', 'vol/n', 'srfpts/n/mdl', 
         'srfpts/n/trg',  'srfpts/detspc', 'srfpts/dblsmpl',
         'trg/w', 'trg/btstrp', 'trg/tau', 'trg/reg/w', 'opt/lr', 
-        'opt/dstr',  'nn/*', 'chrg/*', 'ic/*', 'vol/*', 'eval/*']
+        'opt/dstr',  'nn/*', 'chrg/*', 'ic/*', 'vol/*', 'eval/*', 
+        'srfpts/trnsfrm/*', 'srfpts/samp/*']
     etcpats = ['desc', 'date', 'opt/epoch', 'rng_seed/list', 'io/*']
 
     hpopts = [x for pat in hppats for x in 
@@ -2066,7 +2808,6 @@ def main(cfg_dict_input):
         raise NotImplementedError(f'opt/dstr="{opt_type}" not implmntd')
 
     # Evaluation tools
-    erng = rng
     last_perfdict = dict()
     ema = EMA(gamma=0.999, gamma_sq=0.998)
     trn_sttime = time.time()
@@ -2090,20 +2831,24 @@ def main(cfg_dict_input):
         model_history = odict()
         target_history = odict()
 
-    for epoch in range(n_epochs+1):
+    # %%
+    for epoch in range(n_epochs+1):        
         opt.zero_grad()
 
         # Sampling the volumes
         volsamps = volsampler(n=n_srf)
 
         # Sampling the points from the srferes
-        srfsamps = srfsampler(volsamps, n_points, do_detspacing=do_detspacing)
+        srfsamps = srfsampler(volsamps, n_points, trnsfrm_params=srftnsfrm_params, 
+            samp_params=srfsamp_params, do_randrots=True, do_shflpts=srf_shflpts)
         points = nn.Parameter(srfsamps['points'])
+        weights = srfsamps['weights']
         surfacenorms = srfsamps['normals']
         areas = srfsamps['areas']
         assert points.shape == (n_seeds, n_srf, n_points, dim)
         assert surfacenorms.shape == (n_seeds, n_srf, n_points, dim)
-        assert areas.shape == (n_seeds, n_srf,)
+        assert weights.shape == (n_seeds, n_srf, n_points)
+        assert areas.shape == (n_seeds, n_srf)
 
         points_mdl = points[:, :, :n_srfpts_mdl, :]
         assert points_mdl.shape == (n_seeds, n_srf, n_srfpts_mdl, dim)
@@ -2114,6 +2859,11 @@ def main(cfg_dict_input):
         assert surfacenorms_mdl.shape == (n_seeds, n_srf, n_srfpts_mdl, dim)
         surfacenorms_trg = surfacenorms[:, :, n_srfpts_mdl:, :]
         assert surfacenorms_trg.shape == (n_seeds, n_srf, n_srfpts_trg, dim)
+        
+        weights_mdl = weights[:, :, :n_srfpts_mdl]
+        assert weights_mdl.shape == (n_seeds, n_srf, n_srfpts_mdl)
+        weights_trg = weights[:, :, n_srfpts_mdl:]
+        assert weights_trg.shape == (n_seeds, n_srf, n_srfpts_trg)
 
         # Making surface integral predictions using the reference model
         u_mdl = model(points_mdl)
@@ -2124,11 +2874,13 @@ def main(cfg_dict_input):
         assert nabla_x_u_mdl.shape == (n_seeds, n_srf, n_srfpts_mdl, dim)
         normprods_mdl = (nabla_x_u_mdl * surfacenorms_mdl).sum(dim=-1)
         assert normprods_mdl.shape == (n_seeds, n_srf, n_srfpts_mdl)
+        wnormprods_mdl = normprods_mdl * weights_mdl
+        assert wnormprods_mdl.shape == (n_seeds, n_srf, n_srfpts_mdl)
         if n_srfpts_mdl > 0:
-            mean_normprods_mdl = normprods_mdl.mean(dim=-1, keepdim=True)
-            assert mean_normprods_mdl.shape == (n_seeds, n_srf, 1)
+            mean_wnormprods_mdl = wnormprods_mdl.mean(dim=-1, keepdim=True)
+            assert mean_wnormprods_mdl.shape == (n_seeds, n_srf, 1)
         else:
-            mean_normprods_mdl = 0.0
+            mean_wnormprods_mdl = 0.0
 
         # Making surface integral predictions using the target model
         u_trg = target(points_trg)
@@ -2140,33 +2892,35 @@ def main(cfg_dict_input):
 
         normprods_trg = (nabla_x_u_trg * surfacenorms_trg).sum(dim=-1)
         assert normprods_trg.shape == (n_seeds, n_srf, n_srfpts_trg)
+        wnormprods_trg = normprods_trg * weights_trg
+        assert wnormprods_trg.shape == (n_seeds, n_srf, n_srfpts_trg)
         if do_dblsampling:
             assert n_rsdls == 2
 
-            mean_normprods_trg1 = normprods_trg[..., 0::2].mean(
+            mean_wnormprods_trg1 = wnormprods_trg[..., 0::2].mean(
                 dim=-1, keepdim=True)
-            assert mean_normprods_trg1.shape == (n_seeds, n_srf, 1)
+            assert mean_wnormprods_trg1.shape == (n_seeds, n_srf, 1)
 
-            mean_normprods_trg2 = normprods_trg[..., 1::2].mean(
+            mean_wnormprods_trg2 = wnormprods_trg[..., 1::2].mean(
                 dim=-1, keepdim=True)
-            assert mean_normprods_trg2.shape == (n_seeds, n_srf, 1)
+            assert mean_wnormprods_trg2.shape == (n_seeds, n_srf, 1)
 
-            mean_normprods_trg = torch.cat(
-                [mean_normprods_trg1, mean_normprods_trg2], dim=-1)
-            assert mean_normprods_trg.shape == (n_seeds, n_srf, n_rsdls)
+            mean_wnormprods_trg = torch.cat(
+                [mean_wnormprods_trg1, mean_wnormprods_trg2], dim=-1)
+            assert mean_wnormprods_trg.shape == (n_seeds, n_srf, n_rsdls)
         else:
             assert n_rsdls == 1
 
-            mean_normprods_trg = normprods_trg.mean(dim=-1, keepdim=True)
-            assert mean_normprods_trg.shape == (n_seeds, n_srf, n_rsdls)
+            mean_wnormprods_trg = wnormprods_trg.mean(dim=-1, keepdim=True)
+            assert mean_wnormprods_trg.shape == (n_seeds, n_srf, n_rsdls)
 
         # Linearly combining the reference and target predictions
-        mean_normprods = (       w_trg  * mean_normprods_trg +
-                          (1.0 - w_trg) * mean_normprods_mdl)
-        assert mean_normprods.shape == (n_seeds, n_srf, n_rsdls)
+        mean_wnormprods = (       w_trg  * mean_wnormprods_trg +
+                           (1.0 - w_trg) * mean_wnormprods_mdl)
+        assert mean_wnormprods.shape == (n_seeds, n_srf, n_rsdls)
 
         # Considering the surface areas
-        pred_surfintegs = mean_normprods * areas.reshape(n_seeds, n_srf, 1)
+        pred_surfintegs = mean_wnormprods * areas.reshape(n_seeds, n_srf, 1)
         assert pred_surfintegs.shape == (n_seeds, n_srf, n_rsdls)
 
         # Getting the reference volume integrals
@@ -2244,7 +2998,6 @@ def main(cfg_dict_input):
 
                     ic_allpnts = ic_c + ic_thtilde * ic_pntrs
                     assert ic_allpnts.shape == (n_seeds, ic_n, dim)
-
                 else:
                     raise ValueError(f'ic/dstr={ic_dstr} not defined')
 
@@ -2338,7 +3091,11 @@ def main(cfg_dict_input):
 
             # Sampling the evaluation points
             with torch.no_grad():
-                if edstr == 'uniform':
+                is_jointstatic = (eopts.get('rx/dstr', 'joint') == 'joint') and eopts.get('rx/static', False)
+                if is_jointstatic and (epoch > 0):
+                    e_pnts = eopts['e_pnts']
+                    assert e_pnts.shape == (n_seeds, n_evlpnts, dim)
+                elif edstr == 'uniform':
                     e_bias = eopts['bias']
                     assert e_bias.shape == (n_seeds, 1, dim)
 
@@ -2351,49 +3108,75 @@ def main(cfg_dict_input):
                     e_pnts = e_bias + e_unfpnts * e_slope
                     assert e_pnts.shape == (n_seeds, n_evlpnts, dim)
                 elif edstr in ('ball', 'trnvol'):
-                    if edstr == 'ball':
-                        e_c = eopts['c_xpnd']
-                        assert e_c.shape == (n_seeds, n_evlpnts, dim)
+                    # Whether the point centers and radii are static
+                    e_iscrstatic = eopts['iscrstatic']
+                    if e_iscrstatic:
+                        e_pntcs = eopts['pnt_c']
+                        assert e_pntcs.shape == (n_seeds, n_evlpnts, dim)
+                        
+                        e_pntrs = eopts['pnt_r']
+                        assert e_pntrs.shape == (n_seeds, n_evlpnts, 1)
+                    elif (edstr == 'ball') and not(e_iscrstatic):
+                        e_pntcs = eopts['c_xpnd']
+                        assert e_pntcs.shape == (n_seeds, n_evlpnts, dim)
 
                         e_r = eopts['r_xpnd']
                         assert e_r.shape == (n_seeds, n_evlpnts, 1)
-                    elif edstr == 'trnvol':
+                        
+                        euntrd = erng.uniform((n_seeds, n_evlpnts, 1))
+                        assert euntrd.shape == (n_seeds, n_evlpnts, 1)
+                    
+                        untr = euntrd.pow(1.0 / dim)
+                        assert untr.shape == (n_seeds, n_evlpnts, 1)
+
+                        e_pntrs = untr * e_r
+                        assert e_pntrs.shape == (n_seeds, n_evlpnts, 1)
+                    elif (edstr == 'trnvol') and not(e_iscrstatic):
                         evols = volsampler(n=n_evlpnts)
                         assert evols['type'] == 'ball'
 
-                        e_c = evols['centers']
-                        assert e_c.shape == (n_seeds, n_evlpnts, dim)
+                        e_pntcs = evols['centers']
+                        assert e_pntcs.shape == (n_seeds, n_evlpnts, dim)
 
                         e_r_ = evols['radii']
                         assert e_r_.shape == (n_seeds, n_evlpnts)
 
                         e_r = e_r_.unsqueeze(dim=-1)
                         assert e_r.shape == (n_seeds, n_evlpnts, 1)
+                        
+                        euntrd = erng.uniform((n_seeds, n_evlpnts, 1))
+                        assert euntrd.shape == (n_seeds, n_evlpnts, 1)
+                    
+                        untr = euntrd.pow(1.0 / dim)
+                        assert untr.shape == (n_seeds, n_evlpnts, 1)
+
+                        e_pntrs = untr * e_r
+                        assert e_pntrs.shape == (n_seeds, n_evlpnts, 1)
                     else:
-                        raise RuntimeError(f'case not defined')
+                        raise RuntimeError(f'case not defined')                    
+                    
+                    # Whether the point theta-tildes are static (i.e., determined 
+                    # only once at the beginning of training)
+                    e_isthstatic = eopts['isthstatic']
+                    if e_isthstatic:
+                        e_thtilde = eopts['thtilde']
+                        assert e_thtilde.shape == (n_seeds, n_evlpnts, dim)
+                    else:
+                        etheta = erng.normal((n_seeds, n_evlpnts, dim))
+                        assert etheta.shape == (n_seeds, n_evlpnts, dim)
 
-                    untrd = erng.uniform((n_seeds, n_evlpnts, 1))
-                    assert untrd.shape == (n_seeds, n_evlpnts, 1)
+                        e_thtilde = etheta / etheta.norm(dim=-1, keepdim=True)
+                        assert e_thtilde.shape == (n_seeds, n_evlpnts, dim)
 
-                    untr = untrd.pow(1.0 / dim)
-                    assert untr.shape == (n_seeds, n_evlpnts, 1)
-
-                    e_pntrs = untr * e_r
-                    assert e_pntrs.shape == (n_seeds, n_evlpnts, 1)
-
-                    etheta = erng.normal((n_seeds, n_evlpnts, dim))
-                    assert etheta.shape == (n_seeds, n_evlpnts, dim)
-
-                    ethtilde = etheta / etheta.norm(dim=-1, keepdim=True)
-                    assert ethtilde.shape == (n_seeds, n_evlpnts, dim)
-
-                    e_pnts = e_c + ethtilde * e_pntrs
+                    e_pnts = e_pntcs + e_thtilde * e_pntrs
                     assert e_pnts.shape == (n_seeds, n_evlpnts, dim)
                 elif edstr in ('grid'):
                     e_pnts = eopts['pnts']
                     assert e_pnts.shape == (n_seeds, n_g, dim)
                 else:
                     raise RuntimeError(f'eval dstr "{edstr}" not implmntd')
+                if is_jointstatic and (epoch == 0):
+                    eopts['e_pnts'] = e_pnts.detach().clone() 
 
             # Computing the model, target and ground truth solutions
             prob_sol = get_prob_sol(problem, e_pnts, n_eval=eval_bs, 
@@ -2461,15 +3244,14 @@ def main(cfg_dict_input):
                     soltd_list = [('mdl', mdl_sol, fig_mdl, ax_mdl, cax_mdl)]
                     if do_bootstrap:
                         soltd_list += [('trg', trg_sol, fig_trg, ax_trg, cax_trg)]
-                    if epoch == 0:
-                        soltd_list += [('gt', prob_sol, fig_gt, ax_gt, cax_gt)]
+                    soltd_list += [('gt', prob_sol, fig_gt, ax_gt, cax_gt)]
                     for sol_t, sol_dict, fig, ax, cax in soltd_list:
                         x1_msh_np, x2_msh_np = eopts['xi_msh_np']
                         plot_sol(x1_msh_np, x2_msh_np, sol_dict, fig=fig, ax=ax, cax=cax)
                         fig.set_tight_layout(True)
                         tbwriter.add_figure(f'viz/{eid}/{sol_t}', fig, epoch)
                     tbwriter.flush()
-        
+         
         # monitoring the resource utilization 
         if epoch % iomon_period == 0:
             s_rsrc = resource.getrusage(resource.RUSAGE_SELF)
@@ -2574,6 +3356,7 @@ def main(cfg_dict_input):
                 in model.state_dict().items()})
             target_history[epoch] = deepcopy({k: v.cpu() for k, v
                 in target.state_dict().items()})
+            
 
     if results_dir is not None:
         print(f'Training finished in {time.time() - trn_sttime:.1f} seconds.')
@@ -2679,7 +3462,6 @@ if __name__ == '__main__':
     config_tree = '/'.join(cfgidsplit[:-1])
     # Example: config_tree == 'lvl1/lvl2'
 
-    import os
     os.makedirs(configs_dir, exist_ok=True)
     # Example: configs_dir == '.../code_bspinn/config'
     os.makedirs(results_dir, exist_ok=True)
@@ -2690,10 +3472,22 @@ if __name__ == '__main__':
     if args_dryrun:
         print('>> Running in dry-run mode', flush=True)
 
-    cfg_path = f'{configs_dir}/{config_tree}/{config_id}.json'
+    cfg_path_ = f'{configs_dir}/{config_tree}/{config_id}'
+    cfg_exts = [cfg_ext for cfg_ext in ['json', 'yml', 'yaml'] if exists(f'{cfg_path_}.{cfg_ext}')]
+    assert len(cfg_exts) < 2, f'found multiple {cfg_exts} extensions for {cfg_path_}'
+    assert len(cfg_exts) > 0, f'found no json or yaml config at {cfg_path_}'
+    cfg_ext = cfg_exts[0]
+    cfg_path = f'{cfg_path_}.{cfg_ext}'
     print(f'>> Reading configuration from {cfg_path}', flush=True)
-    with open(cfg_path) as fp:
-        json_cfgdict = json.load(fp, object_pairs_hook=odict)
+    
+    if cfg_ext.lower() == 'json':
+        with open(cfg_path, 'r') as fp:
+            json_cfgdict = json.load(fp, object_pairs_hook=odict)
+    elif cfg_ext.lower() in ('yml', 'yaml'):
+        with open(cfg_path, 'r') as fp:
+            json_cfgdict = odict(yaml.safe_load(fp))
+    else:
+        raise RuntimeError(f'unknown config extension: {cfg_ext}')
     
     if args_dryrun:
         import tempfile
@@ -2749,7 +3543,7 @@ if __name__ == '__main__':
         tempcfg['opt/epoch'] = 0
         tod = main(tempcfg)
         allocmem, totmem = tod['dvc/mem/alloc'], tod['dvc/mem/total']
-        nsd_max = int(0.5 * totmem / allocmem)
+        nsd_max = int(0.75 * totmem / allocmem)
         
         # Computing how many parts we must split the original config into
         cfg_seeds = config_dict['rng_seed/list']
@@ -2779,3 +3573,5 @@ if __name__ == '__main__':
         temp_resdir.cleanup()
         print(f'>> [dry-run] Cleaning up {temp_strdir.name}')
         temp_strdir.cleanup()
+
+# %%
