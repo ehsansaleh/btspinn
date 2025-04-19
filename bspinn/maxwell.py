@@ -5,12 +5,15 @@
 #       extension: .py
 #       format_name: hydrogen
 #       format_version: '1.3'
-#       jupytext_version: 1.14.4
+#       jupytext_version: 1.15.2
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
+
+# %% [markdown]
+# ## The Maxwell-Ampere Problem Script
 
 # %% tags=["active-ipynb"]
 # import matplotlib.pyplot as plt
@@ -24,6 +27,27 @@
 #     set_matplotlib_formats('retina')
 #
 # plt.ioff();
+
+# %% tags=["active-ipynb"]
+# # This cell is a sorry attempt at integrating the code onto google colab.
+# # Feel free to remove this cell if you are not using google colab.
+#
+# import os, sys, sysconfig
+# from importlib.util import find_spec
+# is_colab = 'google.colab' in sys.modules
+# site_userpkg = sysconfig.get_paths()['purelib']
+# req_pkgscolab = ['tensorboardX', 'pyinstrument', 'chaospy']
+# if is_colab and any(find_spec(pkg) is None for pkg in req_pkgscolab):
+#     ! pip install {" ".join(req_pkgscolab)}
+# if is_colab and not os.path.exists('/content/btspinn/'):
+#     ! cd /content && git clone https://github.com/ehsansaleh/btspinn.git
+#     ! cd /content/btspinn && pip install -e . && rm -rf *.egg-info
+# if is_colab and (find_spec('bspinn') is None):
+#     ! ln -s /content/btspinn/bspinn {site_userpkg}/bspinn
+# elif is_colab:
+#     ! [ -L {site_userpkg}/bspinn ] && rm {site_userpkg}/bspinn
+# if is_colab and os.path.exists('/content/btspinn/notebook'):
+#     os.chdir('/content/btspinn/notebook')
 
 # %%
 import numpy as np
@@ -42,7 +66,6 @@ import resource
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-# from torch.utils.tensorboard import SummaryWriter
 from tensorboardX import SummaryWriter
 import psutil
 from pyinstrument import Profiler
@@ -72,7 +95,6 @@ from bspinn.io_cfg import configs_dir
 from bspinn.io_cfg import results_dir
 from bspinn.io_cfg import storage_dir
 
-#from bspinn.poisson import make_grid
 # Disabling pytorch deprecation warnings
 import warnings
 warnings.filterwarnings("ignore")
@@ -1784,9 +1806,10 @@ def chck_dstrargs(opt, cfgdict, dstr2args, opt2req, parnt_optdstr=None):
 # ## JSON Config Loading and Preprocessing
 
 # %% code_folding=[1] tags=["active-ipynb"]
-# json_cfgpath = f'../configs/03_maxwell/04_rect.json'
-# # ! rm -rf "./18_maxwell/results/04_rect.h5"
-# # ! rm -rf "./18_maxwell/storage/04_rect"
+# json_cfgpath = f'../configs/03_maxwell/01_rect.json'
+# ! rm -rf "./18_maxwell/results/01_rect.h5"
+# ! rm -rf "./18_maxwell/storage/01_rect"
+#
 # if json_cfgpath.endswith('.json'):
 #     with open(json_cfgpath, 'r') as fp:
 #         json_cfgdict = json.load(fp, object_pairs_hook=odict)
@@ -1796,15 +1819,13 @@ def chck_dstrargs(opt, cfgdict, dstr2args, opt2req, parnt_optdstr=None):
 # else:
 #     raise RuntimeError(f'unknown config extension: {json_cfgpath}')
 #
-# json_cfgdict['io/config_id'] = '04_rect'
+# json_cfgdict['io/config_id'] = '01_rect'
 # json_cfgdict['io/results_dir'] = './18_maxwell/results'
 # json_cfgdict['io/storage_dir'] = './18_maxwell/storage'
-# json_cfgdict['io/tch/device'] = 'cuda:0'
+# json_cfgdict['io/tch/device'] = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 #
 # all_cfgdicts = preproc_cfgdict(json_cfgdict)
 # cfg_dict_input = all_cfgdicts[0]
-#
-#
 
 # %% tags=["active-py"]
 def main(cfg_dict_input):
