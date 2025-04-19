@@ -1,0 +1,223 @@
+# An optional description of this config.
+desc: Example smolluchowski equation solution using the delayed target method
+# Date of the experimentation. This is optional and will not be used in training or summarization.
+date: January 22, 2022
+
+# The random number generator's list of seeds:
+#   1. The range of values must be specified in a pythonic manner: [start, stop, step]
+#   2. The number of models trained in parallel is determined by this option; this option
+#      determines the number of completely independent models trained in parallel.
+#   3. You can specify the list of seeds manually using the alternative `rng_seed/list` key.
+rng_seed/range: [0, 100000, 1000]
+# The type of problem. This is mainly used to make sure the correct script is running this config.
+problem: smolluchowski
+# The dimensionality of the problem
+dim/list: [1, 2, 3]
+
+###################################################################################################
+################################ The Optimization Hyper-parameters ################################
+###################################################################################################
+# The optimizer's type. Available options are 'adam' and 'sgd'.
+opt/dstr: adam
+# The optimizer's learning rate.
+opt/lr: 0.001
+# The number of optimization iterations. 
+# This is the same as the number of `.step()` calls to the optimizer. 
+opt/epoch: 200000
+
+###################################################################################################
+############################ Training Point Sampling Hyper-Parameters #############################
+###################################################################################################
+# The number of target points
+pts/n: 1
+# Whether to deterministically space the sampled points or not.
+pts/detspc/list: [false, true]
+
+# The number of sampled equations in each training iteration. In other words, this 
+# corresponds to the mini-batch size for the SGD optimizer. 
+eq/n/list: [400, 256, 128, 64, 32, 16, 8, 4, 2, 1]
+# The sampling distribution of x in the smoluchkwoski equation.  
+eq/x/dstr: uniform
+# The lower corner of the cube used for uniformly sampling the x values.
+eq/x/low: [0.0]
+# The higher corner of the cube used for uniformly sampling the x values.
+eq/x/high: [1.0]
+
+# The type of the sampled time in each equation:
+#   1. `delta` means that there is a unique time sampled for each equation.
+#   2. `uniform` integrates the time over a uniform interval for each equation.
+eq/t/dstr: delta
+# The distribution of the unique sampled time for each equation.
+eq/t/loc/dstr: uniform
+# The lower end of the uniform interval for sampling the equation time.
+eq/t/loc/low: 0.0
+# The higher end of the uniform interval for sampling the equation time.
+eq/t/loc/high: 1.0
+
+###################################################################################################
+############################# The Delayed Targeting Hyper-Parameters ##############################
+###################################################################################################
+# Whether to use the delayed target method or not.
+trg/btstrp: true
+# The target smoothing factor in the delayed target method. 
+# This corresponds to the $\tau$ hyper-parameter in Algorithm 1 of the main paper.
+trg/tau/list: [0.99, 0.9, 0.999, 0.9999, 0.99999]
+# The target regularization weight in the delayed target method. 
+# This corresponds to the $\lambda$ hyper-parameter in Algorithm 1 of the main paper.
+trg/reg/w/list: [1.0, 0.1, 10.0]
+
+###################################################################################################
+########################### The Function Approximation Hyper-parameters ###########################
+###################################################################################################
+# The type of neural network. The only available option is `mlp`.
+nn/dstr: mlp
+# The width of the neural network; this is the number of neural units in each layer.
+nn/width/list: [64, 32, 128]
+# The number of hidden layers in the neural network.
+nn/hidden/list: [2, 1, 3, 4]
+# The activation function of the network. The available values are `['silu', 'tanh', 'relu']`.
+nn/act/list: [silu, tanh, relu]
+
+###################################################################################################
+############################## The Coagulation Kernel Specification ###############################
+###################################################################################################
+# The type of the coagulation kernel:
+#   1. The `pnorm` kernel uses the following form for `x` and `y` inputs:
+#      `$$ (((x_1^p + y_1^p)^{1/p} + \cdots + (x_d^p + y_d^p)^{1/p})^{\alpha} + \beta)^{\gamma} $$`
+ker/dstr: pnorm
+# The p-norm of the coagulation kernel.
+ker/norm/p: 0.5
+# The maximum saturation value of the coagulation kernel.
+ker/norm/max: 1.14
+# The constant kernel coefficient.
+ker/slope: 1.23
+# The coagulation kernel exponent applied to the p-norm.
+ker/alpha: 1.5
+# Some additive bias in the pnorm coagulation kernel. Set to 0 for disabling its effect.
+ker/beta: 0.0
+# Some extra exponentiation in the pnorm coagulation kernel. Set to 1 for disabling its effect.
+ker/gamma: 1.0
+
+###################################################################################################
+############################## The Initial Condition Specifications ###############################
+###################################################################################################
+# The initical condition samples time value.
+ic/t: 0.0
+# The x distribution of the initial condition sampled points.
+ic/x/dstr: eq/x
+# The size of the IC samples set. Setting to `eq/n` will use identical sample size to the number 
+# of sampled equations in each epoch of training.
+ic/n: eq/n
+# The initial condition weight.
+ic/w: 1.0
+# The value form for the initial condition. This specifies a mapping of `x` to particle counts `n`:
+#   1. `linear` specifies a `$$n(x, t_0) = a^T \cdot x + b$$` form.
+#   2. `gmm` specifies a gaussian mixture model form.
+ic/dstr: linear
+# The linear form bias for the initial condition.
+ic/bias: 3.0
+# The linear form slope vector for the initial condition.
+ic/slope: '[-1.0/dim]*dim'
+
+###################################################################################################
+############################## The Evaluation Distribution Profiles ###############################
+###################################################################################################
+
+###########################################################
+######### The "Uniform Grid 1" Evaluation Profile #########
+###########################################################
+# The evaluation points distribution. Only `grid` is currently available.
+eval/ug1/dstr: grid
+# The number of time points in the evaluation grid.
+eval/ug1/t/n: 100
+# The number of x grid points in the evaluation grid. This should be a complete `d`-th power.
+eval/ug1/x/n/list: [100, 10000, 8000]
+# The evaluation grid batch-size. A value of zero will be translated the maximal batch size.
+eval/ug1/bs: 0
+# The frequency of evaluation in epochs.
+eval/ug1/frq: 2500
+# The evaluation points time sampling distribution:
+#   1. `uniform` dentoes sampling uniformly from an interval.
+#   2. `eq/t` denotes using identical time sampling distribution to the training process.
+eval/ug1/t/dstr: uniform
+# The lower end of the uniform interval for sampling the evaluation points time.
+eval/ug1/t/low: 0.0
+# The higher end of the uniform interval for sampling the evaluation points time.
+eval/ug1/t/high: 1.0
+# The evaluation points x sampling distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle.
+#   2. `eq/x` denotes using identical sampling distribution to the training process.
+eval/ug1/x/dstr: uniform
+# The lower end corner of the rectangle for sampling the evaluation points uniformly.
+eval/ug1/x/low: [0.0]
+# The higher end corner of the rectangle for sampling the evaluation points uniformly.
+eval/ug1/x/high: [1.0]
+
+###########################################################
+######### The "Uniform Grid 2" Evaluation Profile #########
+###########################################################
+# The evaluation points distribution. Only `grid` is currently available.
+eval/ug2/dstr: grid
+# The number of time points in the evaluation grid.
+eval/ug2/t/n: 100
+# The number of x grid points in the evaluation grid. This should be a complete `d`-th power.
+eval/ug2/x/n/list: [100, 10000, 8000]
+# The evaluation grid batch-size. A value of zero will be translated the maximal batch size.
+eval/ug2/bs: 8
+# The frequency of evaluation in epochs.
+eval/ug2/frq: 1
+# The evaluation points time sampling distribution:
+#   1. `uniform` dentoes sampling uniformly from an interval.
+#   2. `eq/t` denotes using identical time sampling distribution to the training process.
+eval/ug2/t/dstr: eq/t
+# The evaluation points x sampling distribution:
+#   1. `uniform` dentoes sampling uniformly from a rectangle.
+#   2. `eq/x` denotes using identical sampling distribution to the training process.
+eval/ug2/x/dstr: eq/x
+
+###################################################################################################
+################################# The I/O Logistics and Settings ##################################
+###################################################################################################
+# The statistics averaging frequency. A value of 100 means that the training statistics are 
+# averaged every 100 steps before being stored in the disk.
+io/avg/frq: 100
+# The model parameters checkpointing frequency. A value of 2500 means that a snapshot of the neural 
+# models are stored every 2500 steps.
+io/ckpt/frq: 10000
+# The resource monitoring frequency. A value of 1000 means that a snapshot of the resource utilization  
+# of the system (e.g., the CPU, RAM, GPU utilization) is evaluated and stored every 2500 steps.
+io/mon/frq: 1000
+# The floating point data type used in PyTorch. All floating point tensors and parameters (e.g., 
+# the trained models) will be using this data type.
+io/tch/dtype: float32
+# The GZip compression level of the stored HDF files. 
+io/cmprssn_lvl: 0
+# The evaluation mini-batch size. This is different from the training mini-batch size, and it is 
+# only used inside the evaluation protocol. Since the evaluation sample set may be larger than it 
+# can fit the device memory, this mini-batch size will be used to split the evaluations into 
+# manageable chunks. This setting should have no impact on the computed values. Since this option 
+# can impact the performance of the algorithm, try and set it to the highest value that would not 
+# result in an out of memory error. 
+io/eval/bs: 256
+# The flushing frequency of the collected results into the disk.
+#   1. A value of 0 means that the entire results (e.g., the training and evaluation 
+#      statistics and model checkpoints) are written once at the end of the training. 
+#   2. A value of 100000 means that the the results are flushed every 100000 epochs to the disk.
+io/flush/frq: 0
+
+###################################################################################################
+################################# The Looping Tree Specification ##################################
+###################################################################################################
+# This config file defines multiple training configurations, and the looping tree defines how 
+# these configurations are derived from the provided values above.
+
+# This specific file is defining an One Variable at a Time (OVAT) sweep of the hyper-parameter 
+# groups. In OVAT-style experiments, each hyper-parameter is ablated individually while fixing 
+# the other hyper-parameters fixed; the other HPs are fixed at their first value, while the current 
+# HP values are sweeped over.
+
+# The looping tree specification
+looping/lines:
+  - 'ovat(aslist("rng_seed"),                                       '
+  - '     zip("dim", "eval/ug1/x/n", "eval/ug2/x/n"),               '
+  - '     "rest")                                                   '
